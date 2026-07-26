@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Settings · SheetHelper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SheetHelper home">
+        <span class="brand-mark"><span>S</span></span><span>SheetHelper</span>
+      </a>
+      <a class="back-link" href="/">
+        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.42-1.41L7.83 13H20z"/></svg>
+        Back to workspace
+      </a>
+    </header>
+
+    <main class="settings-page">
+      <div class="settings-title">
+        <h1>Settings</h1>
+        <p>Connect SheetHelper to your Google Sheet and Drive folder.</p>
+      </div>
+
+      <form id="settingsForm" class="settings-form">
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h2>Google destination</h2>
+            <p>Choose where job records and uploaded files are saved.</p>
+          </div>
+          <div class="settings-fields">
+            <label>Spreadsheet ID<input name="spreadsheetId" placeholder="From the Google Sheet URL"><small>The app creates the Jobs, Photos, Reports, and Receipt tabs.</small></label>
+            <label>Drive folder ID<input name="driveFolderId" placeholder="From the Google Drive folder URL"></label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h2>Service account</h2>
+            <p>Share the Sheet and Drive folder with this service account as an editor.</p>
+          </div>
+          <div class="settings-fields">
+            <label>Service account email<input name="googleServiceAccountEmail" type="email" placeholder="name@project.iam.gserviceaccount.com"></label>
+            <label>Service account private key<textarea name="googlePrivateKey" rows="7" placeholder="Leave blank to keep the saved key"></textarea></label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h2>Workspace access</h2>
+            <p>Optionally protect the app with a simple access code.</p>
+          </div>
+          <div class="settings-fields">
+            <label>4-digit access code<input name="accessPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="Optional"></label>
+          </div>
+        </section>
+
+        <div class="settings-actions">
+          <span id="saveStatus" role="status"></span>
+          <a class="secondary-button" href="/">Cancel</a>
+          <button class="primary" type="submit">Save changes</button>
+        </div>
+      </form>
+    </main>
+  </div>
+  <div id="settingsLockScreen" class="lock-screen" hidden>
+    <form id="settingsUnlockForm" class="unlock-card">
+      <span class="brand-mark"><span>S</span></span>
+      <p class="eyebrow">ADMIN SETTINGS</p>
+      <h2>Master code required</h2>
+      <p>Enter the 4-digit master code from the server environment.</p>
+      <input name="pin" aria-label="Master access code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" required autofocus>
+      <button class="primary" type="submit">Unlock settings</button>
+      <a class="secondary-button" href="/">Back to workspace</a>
+    </form>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/settings.js"></script>
+</body>
+</html>

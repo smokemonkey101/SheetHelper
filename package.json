@@ -1,0 +1,19 @@
+{
+  "name": "sheet-helper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Job photo, field report, and receipt capture for Google Sheets and Drive.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "npm run build && node dist/server.js",
+    "check": "npm run build && node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

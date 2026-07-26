@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>SheetHelper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SheetHelper home">
+        <span class="brand-mark"><span>S</span></span>
+        <span>SheetHelper</span>
+      </a>
+      <div class="top-actions">
+        <span id="connectionStatus" class="status"><i></i> Connecting</span>
+        <button id="refreshJobs" class="icon-button" title="Refresh jobs" aria-label="Refresh jobs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></svg>
+        </button>
+        <a href="/settings" class="icon-button" title="Settings" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.1 7.1 0 0 0-1.62-.94L14.4 2.81A.48.48 0 0 0 13.92 2h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.58.24-1.12.55-1.63.94l-2.38-.96a.48.48 0 0 0-.59.22L2.72 8.47a.49.49 0 0 0 .12.61l2.03 1.58c-.05.31-.08.65-.08.98s.03.66.08.98l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.38.31.6.22l2.38-.96c.5.39 1.05.71 1.63.95l.36 2.53c.04.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.53c.58-.24 1.12-.56 1.62-.95l2.39.96c.22.08.48 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="hero">
+        <div>
+          <h1>Job updates</h1>
+          <p>Send photos, field notes, and receipts straight to the right job record.</p>
+        </div>
+        <button id="refreshJobsText" class="text-button" type="button">Refresh job list</button>
+      </section>
+
+      <section class="workspace" aria-label="Job updates">
+        <article class="action-card photo-card">
+          <div class="card-icon blue"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2M8.5 13.5l2.5 3.01L14.5 12l4.5 6H5z"/></svg></div>
+          <h2>Upload photos</h2>
+          <p>Add several progress photos to a job at once.</p>
+          <form id="photoForm">
+            <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
+            <label class="dropzone" for="photoFiles">
+              <input id="photoFiles" type="file" accept="image/*" multiple required>
+              <span class="upload-symbol">＋</span>
+              <strong>Choose photos</strong>
+              <small id="photoFileLabel">JPG, PNG, or camera photos</small>
+            </label>
+            <button class="primary" type="submit">Upload photos</button>
+          </form>
+        </article>
+
+        <article class="action-card report-card">
+          <div class="card-icon green"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.89 2 2 2h12a2 2 0 0 0 2-2V8zm1 15H7v-2h8zm2-4H7v-2h10zm-4-4V3.5L18.5 9z"/></svg></div>
+          <h2>Field report</h2>
+          <p>Record a short update, note, or job summary.</p>
+          <form id="reportForm">
+            <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
+            <label>Report<textarea name="report" rows="7" maxlength="10000" placeholder="What happened on this job today?" required></textarea></label>
+            <div class="character-count"><span id="reportCount">0</span> / 10,000</div>
+            <button class="primary" type="submit">Save report</button>
+          </form>
+        </article>
+
+        <article class="action-card receipt-card">
+          <div class="card-icon yellow"><svg viewBox="0 0 24 24"><path d="M18 17H6v-2h12zm0-4H6v-2h12zm0-4H6V7h12zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2z"/></svg></div>
+          <h2>Receipt upload</h2>
+          <p>Capture a receipt and automatically read its details.</p>
+          <form id="receiptForm">
+            <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
+            <label class="dropzone" for="receiptFile">
+              <input id="receiptFile" type="file" accept="image/*" required>
+              <span class="upload-symbol">＋</span>
+              <strong>Choose one receipt</strong>
+              <small id="receiptFileLabel">Make sure the total is clearly visible</small>
+            </label>
+            <button class="primary" type="submit">Upload receipt</button>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <footer><span>SheetHelper</span><span>Google Sheets + Drive</span></footer>
+  </div>
+
+  <div id="lockScreen" class="lock-screen" hidden>
+    <form id="unlockForm" class="unlock-card">
+      <span class="brand-mark">S</span>
+      <p class="eyebrow">PRIVATE WORKSPACE</p>
+      <h2>Welcome back</h2>
+      <p>Enter your 4-digit code to continue.</p>
+      <input name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" required autofocus>
+      <button class="primary" type="submit">Unlock</button>
+    </form>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
