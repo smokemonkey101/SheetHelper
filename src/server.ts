@@ -38,6 +38,24 @@ function clean(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function spreadsheetIdFrom(value: unknown): string {
+  const input = clean(value);
+  const urlMatch = input.match(/\/spreadsheets\/d\/([^/?#]+)/i);
+  return urlMatch?.[1] || input;
+}
+
+export function driveFolderIdFrom(value: unknown): string {
+  const input = clean(value);
+  const pathMatch = input.match(/\/folders\/([^/?#]+)/i);
+  if (pathMatch?.[1]) return pathMatch[1];
+  try {
+    const url = new URL(input);
+    return clean(url.searchParams.get("id")) || input;
+  } catch {
+    return input;
+  }
+}
+
 function defaults(): Settings {
   return {
     accessPin: "",
@@ -51,10 +69,10 @@ function defaults(): Settings {
 function sanitizeSettings(input: Partial<Settings>, previous = defaults()): Settings {
   return {
     accessPin: clean(input.accessPin),
-    driveFolderId: clean(input.driveFolderId),
+    driveFolderId: driveFolderIdFrom(input.driveFolderId),
     googlePrivateKey: clean(input.googlePrivateKey) || previous.googlePrivateKey,
     googleServiceAccountEmail: clean(input.googleServiceAccountEmail),
-    spreadsheetId: clean(input.spreadsheetId)
+    spreadsheetId: spreadsheetIdFrom(input.spreadsheetId)
   };
 }
 
@@ -110,7 +128,7 @@ async function googleToken(settings: Settings, scopes: string[]): Promise<string
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       assertion: signedJwt(email, key, scopes),
-      grant_type: "urn:ietf:params:oauth2:grant-type:jwt-bearer"
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
     })
   });
   const result = await response.json() as GoogleTokenResponse;

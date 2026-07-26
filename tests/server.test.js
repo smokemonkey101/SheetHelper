@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseReceiptText, photoFileName, receiptFileName, sheetDefinitions } = require("../dist/server.js");
+const {
+  driveFolderIdFrom,
+  parseReceiptText,
+  photoFileName,
+  receiptFileName,
+  sheetDefinitions,
+  spreadsheetIdFrom
+} = require("../dist/server.js");
 
 test("receipt parser finds the final total and purchased items", () => {
   const parsed = parseReceiptText(`
@@ -29,4 +36,16 @@ test("workbook tabs and columns match the application contract", () => {
     Reports: ["Job", "Date", "Report"],
     Receipt: ["Job", "Date", "Photo", "Total", "Line Items"]
   });
+});
+
+test("Google URLs are normalized to resource IDs", () => {
+  assert.equal(
+    spreadsheetIdFrom("https://docs.google.com/spreadsheets/d/abc123_xyz/edit#gid=0"),
+    "abc123_xyz"
+  );
+  assert.equal(
+    driveFolderIdFrom("https://drive.google.com/drive/u/1/folders/folder_456?usp=sharing"),
+    "folder_456"
+  );
+  assert.equal(driveFolderIdFrom("already-an-id"), "already-an-id");
 });

@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sheetDefinitions = void 0;
+exports.spreadsheetIdFrom = spreadsheetIdFrom;
+exports.driveFolderIdFrom = driveFolderIdFrom;
 exports.photoFileName = photoFileName;
 exports.receiptFileName = receiptFileName;
 exports.parseReceiptText = parseReceiptText;
@@ -62,6 +64,24 @@ exports.sheetDefinitions = {
 function clean(value) {
     return typeof value === "string" ? value.trim() : "";
 }
+function spreadsheetIdFrom(value) {
+    const input = clean(value);
+    const urlMatch = input.match(/\/spreadsheets\/d\/([^/?#]+)/i);
+    return urlMatch?.[1] || input;
+}
+function driveFolderIdFrom(value) {
+    const input = clean(value);
+    const pathMatch = input.match(/\/folders\/([^/?#]+)/i);
+    if (pathMatch?.[1])
+        return pathMatch[1];
+    try {
+        const url = new URL(input);
+        return clean(url.searchParams.get("id")) || input;
+    }
+    catch {
+        return input;
+    }
+}
 function defaults() {
     return {
         accessPin: "",
@@ -74,10 +94,10 @@ function defaults() {
 function sanitizeSettings(input, previous = defaults()) {
     return {
         accessPin: clean(input.accessPin),
-        driveFolderId: clean(input.driveFolderId),
+        driveFolderId: driveFolderIdFrom(input.driveFolderId),
         googlePrivateKey: clean(input.googlePrivateKey) || previous.googlePrivateKey,
         googleServiceAccountEmail: clean(input.googleServiceAccountEmail),
-        spreadsheetId: clean(input.spreadsheetId)
+        spreadsheetId: spreadsheetIdFrom(input.spreadsheetId)
     };
 }
 function loadSettings() {
@@ -129,7 +149,7 @@ async function googleToken(settings, scopes) {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
             assertion: signedJwt(email, key, scopes),
-            grant_type: "urn:ietf:params:oauth2:grant-type:jwt-bearer"
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
         })
     });
     const result = await response.json();
