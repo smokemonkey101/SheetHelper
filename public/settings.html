@@ -36,7 +36,7 @@
           </div>
           <div class="settings-fields">
             <label>Spreadsheet URL or ID<input name="spreadsheetId" placeholder="Paste the Google Sheet URL or ID"><small>The app creates the Jobs, Photos, Reports, and Receipt tabs.</small></label>
-            <label>Drive folder URL or ID<input name="driveFolderId" placeholder="Paste the Google Drive folder URL or ID"></label>
+            <label>Shared Drive folder URL or ID<input name="driveFolderId" placeholder="Paste a folder URL from a Google Workspace Shared Drive"><small>Service accounts cannot upload to a personal My Drive folder.</small></label>
           </div>
         </section>
 
@@ -98,8 +98,8 @@
 
               <h3>3. Connect Sheets and Drive</h3>
               <ol>
-                <li>Create a Google Sheet and a Google Drive folder.</li>
-                <li>Share both with the service account email as an <strong>Editor</strong>.</li>
+                <li>Create a Google Sheet and a folder inside a Google Workspace <strong>Shared Drive</strong>. A personal My Drive folder cannot store service-account uploads.</li>
+                <li>Add the service account to the Shared Drive as a <strong>Content manager</strong>, and share the Google Sheet with it as an <strong>Editor</strong>.</li>
                 <li>Copy the ID from the Google Sheet URL into the Spreadsheet ID field.</li>
                 <li>Copy the ID from the Drive folder URL into the Drive folder ID field.</li>
                 <li>Save settings. SheetHelper will create the required sheet tabs automatically.</li>

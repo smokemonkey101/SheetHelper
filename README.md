@@ -21,8 +21,10 @@ Every job dropdown is loaded from column A of the `Jobs` tab. The app creates mi
 
 1. Create a Google Cloud service account.
 2. Enable the **Google Sheets API**, **Google Drive API**, and **Cloud Vision API**.
-3. Create a Google Sheet and a Drive folder.
-4. Share both with the service account email as an editor.
+3. Create a Google Sheet and a folder inside a Google Workspace **Shared Drive**.
+4. Share the Sheet with the service account as an editor and add the service account
+   to the Shared Drive as a content manager. Service accounts cannot upload to a
+   personal My Drive folder because they do not have storage quota.
 5. Start SheetHelper, open Settings, and save the Spreadsheet ID, Drive folder ID, service account email, and private key.
 6. Add job names to `Jobs`, starting in cell `A2`, then refresh the job dropdowns.
 

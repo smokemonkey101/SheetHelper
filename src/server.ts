@@ -259,7 +259,7 @@ async function uploadDriveImage(settings: Settings, file: Buffer, fileName: stri
     Buffer.from(`\r\n--${boundary}--`)
   ]);
   const response = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink",
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink",
     {
       method: "POST",
       headers: {
@@ -270,7 +270,16 @@ async function uploadDriveImage(settings: Settings, file: Buffer, fileName: stri
     }
   );
   const result = await response.json() as { id?: string; webViewLink?: string; error?: { message?: string } };
-  if (!response.ok || !result.id) throw new Error(result.error?.message || "Drive upload failed.");
+  if (!response.ok || !result.id) {
+    const message = result.error?.message || "Drive upload failed.";
+    if (/service accounts? do not have storage quota/i.test(message)) {
+      throw new Error(
+        "The destination must be a folder inside a Google Workspace Shared Drive. " +
+        "Service accounts cannot upload files to a personal My Drive folder."
+      );
+    }
+    throw new Error(message);
+  }
   return result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`;
 }
 
