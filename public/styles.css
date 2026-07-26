@@ -238,6 +238,32 @@ footer {
   background: #f8fafd;
 }
 #saveStatus { margin-right: auto; color: var(--green); }
+.setup-guide { padding: 20px 32px; border-bottom: 1px solid var(--line); }
+.setup-guide details { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; }
+.setup-guide summary {
+  min-height: 72px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.setup-guide summary::-webkit-details-marker { display: none; }
+.setup-guide summary:hover { background: #f8fafd; }
+.setup-guide summary > span:nth-child(2) { min-width: 0; display: flex; flex: 1; flex-direction: column; }
+.setup-guide summary strong { font: 500 16px "Google Sans", Roboto, sans-serif; }
+.setup-guide summary small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.setup-guide-icon { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: var(--blue); background: #e8f0fe; }
+.expand-arrow { flex: none; color: var(--muted); transition: transform .2s ease; }
+.setup-guide details[open] .expand-arrow { transform: rotate(180deg); }
+.setup-guide-content { padding: 8px 28px 28px 72px; border-top: 1px solid var(--line); color: #3c4043; }
+.setup-guide-content h3 { margin: 24px 0 8px; color: var(--text); font: 500 17px "Google Sans", Roboto, sans-serif; }
+.setup-guide-content ol { margin: 0; padding-left: 22px; }
+.setup-guide-content ul { margin: 6px 0; padding-left: 20px; }
+.setup-guide-content li + li { margin-top: 6px; }
+.setup-guide-content code { padding: 2px 5px; border-radius: 4px; background: #f1f3f4; font: 12px Consolas, monospace; overflow-wrap: anywhere; }
 
 .lock-screen { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; padding: 20px; background: #fff; }
 .lock-screen[hidden] { display: none; }
@@ -281,6 +307,10 @@ footer {
   .settings-title p { font-size: 14px; }
   .settings-form { border-radius: 12px; }
   .settings-section { padding: 24px 18px; grid-template-columns: 1fr; gap: 20px; }
+  .setup-guide { padding: 18px; }
+  .setup-guide summary { padding: 12px; }
+  .setup-guide summary small { white-space: normal; }
+  .setup-guide-content { padding: 4px 18px 24px; }
   .settings-actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; min-height: 72px; padding: 12px 16px; border-top: 1px solid var(--line); box-shadow: 0 -2px 8px rgba(60,64,67,.08); }
   .settings-actions .primary { width: auto; }
   #saveStatus { display: none; }

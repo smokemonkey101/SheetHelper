@@ -61,6 +61,70 @@
           </div>
         </section>
 
+        <section class="setup-guide">
+          <details>
+            <summary>
+              <span class="setup-guide-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18h2v-2h-2zm1-16A10 10 0 1 0 12 22 10 10 0 0 0 12 2m0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16m0-14a4 4 0 0 0-4 4h2a2 2 0 1 1 2.83 1.82c-1.23.5-1.83 1.22-1.83 2.68V15h2v-.5c0-.77.18-1.01.83-1.28A4 4 0 0 0 12 6"/></svg>
+              </span>
+              <span>
+                <strong>How to set up SheetHelper</strong>
+                <small>Google Cloud, Sheets, Drive, and Railway instructions</small>
+              </span>
+              <svg class="expand-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7.41 8.59 4.59 4.58 4.59-4.58L18 10l-6 6-6-6z"/></svg>
+            </summary>
+            <div class="setup-guide-content">
+              <h3>1. Prepare Google Cloud</h3>
+              <ol>
+                <li>Open the Google Cloud Console and select or create a project.</li>
+                <li>Attach a billing account to the project. Cloud Vision requires billing, although the first 1,000 receipt images each month are free.</li>
+                <li>Open <strong>APIs &amp; Services → Library</strong> and enable:
+                  <ul>
+                    <li>Cloud Vision API</li>
+                    <li>Google Sheets API</li>
+                    <li>Google Drive API</li>
+                  </ul>
+                </li>
+              </ol>
+
+              <h3>2. Create the service account</h3>
+              <ol>
+                <li>Open <strong>IAM &amp; Admin → Service Accounts</strong> and create a service account.</li>
+                <li>Open it, then choose <strong>Keys → Add key → Create new key → JSON</strong>.</li>
+                <li>Keep the downloaded JSON file private. Never upload it to GitHub.</li>
+                <li>Copy <code>client_email</code> into the service account email field above.</li>
+                <li>Copy the complete <code>private_key</code> into the private key field above.</li>
+              </ol>
+
+              <h3>3. Connect Sheets and Drive</h3>
+              <ol>
+                <li>Create a Google Sheet and a Google Drive folder.</li>
+                <li>Share both with the service account email as an <strong>Editor</strong>.</li>
+                <li>Copy the ID from the Google Sheet URL into the Spreadsheet ID field.</li>
+                <li>Copy the ID from the Drive folder URL into the Drive folder ID field.</li>
+                <li>Save settings. SheetHelper will create the required sheet tabs automatically.</li>
+                <li>Add job names to the <strong>Jobs</strong> tab in column A, starting at cell A2.</li>
+              </ol>
+
+              <h3>4. Configure Railway</h3>
+              <ol>
+                <li>Add a persistent Railway volume mounted at <code>/data</code>.</li>
+                <li>Set <code>SETTINGS_FILE_PATH=/data/app-settings.json</code>.</li>
+                <li>Set <code>SITE_MASTER_PIN</code> to your four-digit master code.</li>
+                <li>Set <code>SITE_UNLOCK_SECRET</code> to a long random value.</li>
+                <li>Deploy, generate a public domain, open this page, and save the Google connection.</li>
+              </ol>
+
+              <h3>5. Test the connection</h3>
+              <ol>
+                <li>Return to the workspace and refresh the job list.</li>
+                <li>Upload a clear receipt photo with the total visible.</li>
+                <li>Confirm that the image appears in Drive and a new row appears on the Receipt tab.</li>
+              </ol>
+            </div>
+          </details>
+        </section>
+
         <div class="settings-actions">
           <span id="saveStatus" role="status"></span>
           <a class="secondary-button" href="/">Cancel</a>
