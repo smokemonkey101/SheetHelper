@@ -25,7 +25,7 @@
     <main class="settings-page">
       <div class="settings-title">
         <h1>Settings</h1>
-        <p>Connect SheetHelper to your Google Sheet and Drive folder.</p>
+        <p>Connect SheetHelper to Google Sheets, Vision, and your personal Drive.</p>
       </div>
 
       <form id="settingsForm" class="settings-form">
@@ -36,18 +36,46 @@
           </div>
           <div class="settings-fields">
             <label>Spreadsheet URL or ID<input name="spreadsheetId" placeholder="Paste the Google Sheet URL or ID"><small>The app creates the Jobs, Photos, Reports, and Receipt tabs.</small></label>
-            <label>Shared Drive folder URL or ID<input name="driveFolderId" placeholder="Paste a folder URL from a Google Workspace Shared Drive"><small>Service accounts cannot upload to a personal My Drive folder.</small></label>
           </div>
         </section>
 
         <section class="settings-section">
           <div class="settings-copy">
             <h2>Service account</h2>
-            <p>Share the Sheet and Drive folder with this service account as an editor.</p>
+            <p>Used for Google Sheets and receipt text recognition.</p>
           </div>
           <div class="settings-fields">
             <label>Service account email<input name="googleServiceAccountEmail" type="email" placeholder="name@project.iam.gserviceaccount.com"></label>
             <label>Service account private key<textarea name="googlePrivateKey" rows="7" placeholder="Leave blank to keep the saved key"></textarea></label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h2>Personal Google Drive</h2>
+            <p>Connect your Google account so photos use your personal Drive storage.</p>
+          </div>
+          <div class="settings-fields">
+            <div id="driveConnectionCard" class="connection-card">
+              <span class="connection-indicator"></span>
+              <div>
+                <strong id="driveConnectionTitle">Not connected</strong>
+                <small id="driveConnectionDetail">OAuth creates a SheetHelper Uploads folder in My Drive.</small>
+              </div>
+            </div>
+            <label>OAuth client ID<input name="googleOAuthClientId" placeholder="Google OAuth web client ID"></label>
+            <label>OAuth client secret<input name="googleOAuthClientSecret" type="password" placeholder="Leave blank to keep the saved secret"></label>
+            <label>Authorized redirect URI
+              <div class="copy-field">
+                <input id="googleOAuthRedirectUri" name="googleOAuthRedirectUri" readonly>
+                <button id="copyRedirectUri" class="copy-button" type="button">Copy</button>
+              </div>
+              <small>Add this exact URI to the OAuth web client in Google Cloud.</small>
+            </label>
+            <div class="connection-actions">
+              <button id="connectDrive" class="primary" type="button">Connect Google Drive</button>
+              <button id="disconnectDrive" class="secondary-button danger-button" type="button" hidden>Disconnect</button>
+            </div>
           </div>
         </section>
 
@@ -96,17 +124,24 @@
                 <li>Copy the complete <code>private_key</code> into the private key field above.</li>
               </ol>
 
-              <h3>3. Connect Sheets and Drive</h3>
+              <h3>3. Connect Google Sheets</h3>
               <ol>
-                <li>Create a Google Sheet and a folder inside a Google Workspace <strong>Shared Drive</strong>. A personal My Drive folder cannot store service-account uploads.</li>
-                <li>Add the service account to the Shared Drive as a <strong>Content manager</strong>, and share the Google Sheet with it as an <strong>Editor</strong>.</li>
+                <li>Create a Google Sheet and share it with the service account as an <strong>Editor</strong>.</li>
                 <li>Copy the ID from the Google Sheet URL into the Spreadsheet ID field.</li>
-                <li>Copy the ID from the Drive folder URL into the Drive folder ID field.</li>
                 <li>Save settings. SheetHelper will create the required sheet tabs automatically.</li>
                 <li>Add job names to the <strong>Jobs</strong> tab in column A, starting at cell A2.</li>
               </ol>
 
-              <h3>4. Configure Railway</h3>
+              <h3>4. Connect personal Google Drive</h3>
+              <ol>
+                <li>Open <strong>APIs &amp; Services → OAuth consent screen</strong>, configure the app, and add your Google account as a test user if the app is in testing.</li>
+                <li>Open <strong>APIs &amp; Services → Credentials</strong> and create an <strong>OAuth client ID</strong> with application type <strong>Web application</strong>.</li>
+                <li>Copy the authorized redirect URI shown above into the OAuth client's <strong>Authorized redirect URIs</strong>.</li>
+                <li>Copy the client ID and client secret into the fields above, then save settings.</li>
+                <li>Select <strong>Connect Google Drive</strong>, sign in, and approve access. SheetHelper creates its own uploads folder in My Drive.</li>
+              </ol>
+
+              <h3>5. Configure Railway</h3>
               <ol>
                 <li>Add a persistent Railway volume mounted at <code>/data</code>.</li>
                 <li>Set <code>SETTINGS_FILE_PATH=/data/app-settings.json</code>.</li>
@@ -115,7 +150,7 @@
                 <li>Deploy, generate a public domain, open this page, and save the Google connection.</li>
               </ol>
 
-              <h3>5. Test the connection</h3>
+              <h3>6. Test the connection</h3>
               <ol>
                 <li>Return to the workspace and refresh the job list.</li>
                 <li>Upload a clear receipt photo with the total visible.</li>

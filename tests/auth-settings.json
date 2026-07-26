@@ -1,6 +1,9 @@
 {
   "accessPin": "1234",
   "driveFolderId": "",
+  "googleDriveRefreshToken": "",
+  "googleOAuthClientId": "test-client.apps.googleusercontent.com",
+  "googleOAuthClientSecret": "test-secret",
   "googlePrivateKey": "",
   "googleServiceAccountEmail": "",
   "spreadsheetId": ""

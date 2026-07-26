@@ -21,12 +21,16 @@ Every job dropdown is loaded from column A of the `Jobs` tab. The app creates mi
 
 1. Create a Google Cloud service account.
 2. Enable the **Google Sheets API**, **Google Drive API**, and **Cloud Vision API**.
-3. Create a Google Sheet and a folder inside a Google Workspace **Shared Drive**.
-4. Share the Sheet with the service account as an editor and add the service account
-   to the Shared Drive as a content manager. Service accounts cannot upload to a
-   personal My Drive folder because they do not have storage quota.
-5. Start SheetHelper, open Settings, and save the Spreadsheet ID, Drive folder ID, service account email, and private key.
-6. Add job names to `Jobs`, starting in cell `A2`, then refresh the job dropdowns.
+3. Create a Google Sheet and share it with the service account as an editor.
+4. Configure the OAuth consent screen and create a Web application OAuth client.
+5. Start SheetHelper and open Settings. Copy the displayed redirect URI into the
+   OAuth client's authorized redirect URIs.
+6. Save the Spreadsheet ID, service account email/private key, OAuth client ID,
+   and OAuth client secret.
+7. Select **Connect Google Drive** and approve the `drive.file` permission with
+   the Google account whose personal Drive should store uploads. SheetHelper
+   creates a `SheetHelper Uploads` folder owned by that user.
+8. Add job names to `Jobs`, starting in cell `A2`, then refresh the job dropdowns.
 
 Drive links remain governed by the permissions on the destination folder.
 
@@ -57,6 +61,9 @@ Credentials may instead be supplied as environment variables:
 ```text
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
 GOOGLE_PRIVATE_KEY=
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_DRIVE_REFRESH_TOKEN=
 SITE_MASTER_PIN=
 SITE_UNLOCK_SECRET=
 APP_TIMEZONE=America/Los_Angeles

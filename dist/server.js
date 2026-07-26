@@ -50,9 +50,11 @@ const settingsFilePath = process.env.SETTINGS_FILE_PATH
     ? path.resolve(process.env.SETTINGS_FILE_PATH)
     : path.join(rootDir, "data", "app-settings.json");
 const googleTokenUrl = "https://oauth2.googleapis.com/token";
+const googleAuthorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth";
 const masterPin = clean(process.env.SITE_MASTER_PIN) || "";
 const unlockSecret = clean(process.env.SITE_UNLOCK_SECRET) || crypto.randomBytes(32).toString("hex");
 const unlockCookie = "sheet_helper_unlock";
+const oauthStateCookie = "sheet_helper_drive_oauth";
 const maxJsonBytes = 2 * 1024 * 1024;
 const maxImageBytes = 20 * 1024 * 1024;
 exports.sheetDefinitions = {
@@ -86,6 +88,9 @@ function defaults() {
     return {
         accessPin: "",
         driveFolderId: "",
+        googleDriveRefreshToken: "",
+        googleOAuthClientId: "",
+        googleOAuthClientSecret: "",
         googlePrivateKey: "",
         googleServiceAccountEmail: "",
         spreadsheetId: ""
@@ -95,6 +100,9 @@ function sanitizeSettings(input, previous = defaults()) {
     return {
         accessPin: clean(input.accessPin),
         driveFolderId: driveFolderIdFrom(input.driveFolderId),
+        googleDriveRefreshToken: clean(input.googleDriveRefreshToken) || previous.googleDriveRefreshToken,
+        googleOAuthClientId: clean(input.googleOAuthClientId),
+        googleOAuthClientSecret: clean(input.googleOAuthClientSecret) || previous.googleOAuthClientSecret,
         googlePrivateKey: clean(input.googlePrivateKey) || previous.googlePrivateKey,
         googleServiceAccountEmail: clean(input.googleServiceAccountEmail),
         spreadsheetId: spreadsheetIdFrom(input.spreadsheetId)
@@ -108,11 +116,22 @@ function loadSettings() {
         return defaults();
     }
 }
-function saveSettings(input) {
-    const saved = sanitizeSettings(input, loadSettings());
+function persistSettings(settings) {
     fs.mkdirSync(path.dirname(settingsFilePath), { recursive: true });
-    fs.writeFileSync(settingsFilePath, JSON.stringify(saved, null, 2), "utf8");
-    return saved;
+    fs.writeFileSync(settingsFilePath, JSON.stringify(settings, null, 2), "utf8");
+    return settings;
+}
+function saveSettings(input) {
+    const current = loadSettings();
+    return persistSettings(sanitizeSettings({ ...current, ...input }, current));
+}
+function clearDriveOAuthSettings() {
+    const current = loadSettings();
+    return persistSettings({
+        ...current,
+        driveFolderId: "",
+        googleDriveRefreshToken: ""
+    });
 }
 function credentials(settings) {
     return {
@@ -157,6 +176,69 @@ async function googleToken(settings, scopes) {
         throw new Error(result.error_description || result.error || "Google authentication failed.");
     }
     return result.access_token;
+}
+function oauthCredentials(settings) {
+    return {
+        clientId: settings.googleOAuthClientId || clean(process.env.GOOGLE_OAUTH_CLIENT_ID),
+        clientSecret: settings.googleOAuthClientSecret || clean(process.env.GOOGLE_OAUTH_CLIENT_SECRET),
+        refreshToken: settings.googleDriveRefreshToken || clean(process.env.GOOGLE_DRIVE_REFRESH_TOKEN)
+    };
+}
+function requestOrigin(req) {
+    const configured = clean(process.env.PUBLIC_URL).replace(/\/+$/, "");
+    if (configured)
+        return configured;
+    const forwardedProto = clean(req.headers["x-forwarded-proto"]?.toString()).split(",")[0];
+    const protocol = forwardedProto || "http";
+    const host = clean(req.headers.host);
+    if (!host)
+        throw new Error("Unable to determine this site's public address.");
+    return `${protocol}://${host}`;
+}
+function oauthRedirectUri(req) {
+    return clean(process.env.GOOGLE_OAUTH_REDIRECT_URI) ||
+        `${requestOrigin(req)}/api/google-drive/oauth/callback`;
+}
+async function driveOAuthAccessToken(settings) {
+    const { clientId, clientSecret, refreshToken } = oauthCredentials(settings);
+    if (!clientId || !clientSecret || !refreshToken) {
+        throw new Error("Connect your personal Google Drive from Settings first.");
+    }
+    const response = await fetch(googleTokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: refreshToken
+        })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.access_token) {
+        throw new Error(result.error_description || result.error || "Google Drive connection expired.");
+    }
+    return result.access_token;
+}
+async function driveAccessToken(settings) {
+    return oauthCredentials(settings).refreshToken
+        ? driveOAuthAccessToken(settings)
+        : googleToken(settings, ["https://www.googleapis.com/auth/drive"]);
+}
+async function createPersonalDriveFolder(accessToken) {
+    const result = await googleJson("https://www.googleapis.com/drive/v3/files?fields=id,webViewLink", accessToken, {
+        method: "POST",
+        body: {
+            mimeType: "application/vnd.google-apps.folder",
+            name: "SheetHelper Uploads"
+        }
+    });
+    if (!result.id)
+        throw new Error("Google Drive did not return the new folder ID.");
+    return {
+        id: result.id,
+        webViewLink: result.webViewLink || `https://drive.google.com/drive/folders/${result.id}`
+    };
 }
 async function googleJson(url, token, options = {}) {
     const response = await fetch(url, {
@@ -237,7 +319,7 @@ function receiptFileName(job, date) {
 async function uploadDriveImage(settings, file, fileName) {
     if (!settings.driveFolderId)
         throw new Error("Google Drive folder ID is not configured.");
-    const token = await googleToken(settings, ["https://www.googleapis.com/auth/drive"]);
+    const token = await driveAccessToken(settings);
     const boundary = `sheethelper_${crypto.randomBytes(12).toString("hex")}`;
     const metadata = Buffer.from(JSON.stringify({
         name: fileName,
@@ -262,7 +344,7 @@ async function uploadDriveImage(settings, file, fileName) {
     if (!response.ok || !result.id) {
         const message = result.error?.message || "Drive upload failed.";
         if (/service accounts? do not have storage quota/i.test(message)) {
-            throw new Error("The destination must be a folder inside a Google Workspace Shared Drive. " +
+            throw new Error("Connect your personal Google Drive from Settings. " +
                 "Service accounts cannot upload files to a personal My Drive folder.");
         }
         throw new Error(message);
@@ -343,6 +425,31 @@ function sendJson(res, status, body) {
     res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     res.end(JSON.stringify(body));
 }
+function sendRedirect(res, location) {
+    res.writeHead(302, { Location: location, "Cache-Control": "no-store" });
+    res.end();
+}
+function signedOAuthState() {
+    const state = crypto.randomBytes(24).toString("base64url");
+    const signature = crypto.createHmac("sha256", unlockSecret).update(state).digest("hex");
+    return `${state}.${signature}`;
+}
+function validOAuthState(req, providedState) {
+    const saved = parseCookies(req)[oauthStateCookie] || "";
+    const [state, signature] = saved.split(".");
+    if (!state || !signature || state !== providedState)
+        return false;
+    const expected = crypto.createHmac("sha256", unlockSecret).update(state).digest("hex");
+    return signature.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+function driveOAuthResultRedirect(req, result, message = "") {
+    const url = new URL("/settings", requestOrigin(req));
+    url.searchParams.set("drive", result);
+    if (message)
+        url.searchParams.set("message", message.slice(0, 300));
+    return url.toString();
+}
 async function readBody(req, max) {
     return new Promise((resolve, reject) => {
         const chunks = [];
@@ -385,7 +492,11 @@ async function api(req, res, route) {
         sendJson(res, 200, {
             locked: mainIsProtected(settings) && !cookieRole(req),
             pinConfigured: mainIsProtected(settings),
-            ready: Boolean(email && key && settings.spreadsheetId && settings.driveFolderId)
+            ready: Boolean(email &&
+                key &&
+                settings.spreadsheetId &&
+                settings.driveFolderId &&
+                oauthCredentials(settings).refreshToken)
         });
         return;
     }
@@ -408,7 +519,7 @@ async function api(req, res, route) {
             sendJson(res, 401, { error: "That access code did not match." });
             return;
         }
-        res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue(role)}; Path=/; Max-Age=43200; HttpOnly; SameSite=Strict`);
+        res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue(role)}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
         sendJson(res, 200, { ok: true, role });
         return;
     }
@@ -418,11 +529,17 @@ async function api(req, res, route) {
             sendJson(res, 401, { error: "Enter the master access code." });
             return;
         }
-        res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue("master")}; Path=/; Max-Age=43200; HttpOnly; SameSite=Strict`);
+        res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue("master")}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
         sendJson(res, 200, { ok: true, role: "master" });
         return;
     }
-    if (route === "/api/config" && hasMasterPin() && cookieRole(req) !== "master") {
+    const masterOnlyRoutes = new Set([
+        "/api/config",
+        "/api/google-drive/oauth/start",
+        "/api/google-drive/oauth/callback",
+        "/api/google-drive/oauth/disconnect"
+    ]);
+    if (masterOnlyRoutes.has(route) && hasMasterPin() && cookieRole(req) !== "master") {
         sendJson(res, 401, { error: "The master access code is required.", locked: true });
         return;
     }
@@ -435,6 +552,11 @@ async function api(req, res, route) {
         sendJson(res, 200, {
             accessPin: "",
             driveFolderId: settings.driveFolderId,
+            driveOAuthConnected: Boolean(oauthCredentials(settings).refreshToken),
+            googleOAuthClientId: oauthCredentials(settings).clientId,
+            googleOAuthClientSecret: "",
+            googleOAuthRedirectUri: oauthRedirectUri(req),
+            hasGoogleOAuthClientSecret: Boolean(oauthCredentials(settings).clientSecret),
             googlePrivateKey: "",
             googleServiceAccountEmail: email,
             hasGooglePrivateKey: Boolean(key),
@@ -448,6 +570,88 @@ async function api(req, res, route) {
             throw new Error("The access code must be exactly four digits.");
         }
         saveSettings(body);
+        sendJson(res, 200, { ok: true });
+        return;
+    }
+    if (route === "/api/google-drive/oauth/start" && req.method === "GET") {
+        const { clientId, clientSecret } = oauthCredentials(settings);
+        if (!clientId || !clientSecret) {
+            throw new Error("Save the Google OAuth client ID and client secret before connecting Drive.");
+        }
+        const signedState = signedOAuthState();
+        const state = signedState.split(".")[0];
+        const authorizationUrl = new URL(googleAuthorizationUrl);
+        authorizationUrl.search = new URLSearchParams({
+            access_type: "offline",
+            client_id: clientId,
+            include_granted_scopes: "true",
+            prompt: "consent",
+            redirect_uri: oauthRedirectUri(req),
+            response_type: "code",
+            scope: "https://www.googleapis.com/auth/drive.file",
+            state
+        }).toString();
+        res.setHeader("Set-Cookie", `${oauthStateCookie}=${signedState}; Path=/api/google-drive/oauth/callback; Max-Age=600; HttpOnly; SameSite=Lax`);
+        sendRedirect(res, authorizationUrl.toString());
+        return;
+    }
+    if (route === "/api/google-drive/oauth/callback" && req.method === "GET") {
+        const callbackUrl = new URL(req.url || route, requestOrigin(req));
+        const state = clean(callbackUrl.searchParams.get("state"));
+        const code = clean(callbackUrl.searchParams.get("code"));
+        const providerError = clean(callbackUrl.searchParams.get("error"));
+        if (providerError) {
+            sendRedirect(res, driveOAuthResultRedirect(req, "error", providerError));
+            return;
+        }
+        if (!state || !validOAuthState(req, state)) {
+            sendRedirect(res, driveOAuthResultRedirect(req, "error", "The Google connection request expired. Please try again."));
+            return;
+        }
+        if (!code) {
+            sendRedirect(res, driveOAuthResultRedirect(req, "error", "Google did not return an authorization code."));
+            return;
+        }
+        try {
+            const { clientId, clientSecret } = oauthCredentials(settings);
+            const tokenResponse = await fetch(googleTokenUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    code,
+                    grant_type: "authorization_code",
+                    redirect_uri: oauthRedirectUri(req)
+                })
+            });
+            const tokenResult = await tokenResponse.json();
+            if (!tokenResponse.ok || !tokenResult.access_token || !tokenResult.refresh_token) {
+                throw new Error(tokenResult.error_description || tokenResult.error || "Google did not return a reusable Drive connection.");
+            }
+            const folder = await createPersonalDriveFolder(tokenResult.access_token);
+            saveSettings({
+                driveFolderId: folder.id,
+                googleDriveRefreshToken: tokenResult.refresh_token
+            });
+            res.setHeader("Set-Cookie", `${oauthStateCookie}=; Path=/api/google-drive/oauth/callback; Max-Age=0; HttpOnly; SameSite=Lax`);
+            sendRedirect(res, driveOAuthResultRedirect(req, "connected"));
+        }
+        catch (error) {
+            sendRedirect(res, driveOAuthResultRedirect(req, "error", error instanceof Error ? error.message : "Google Drive connection failed."));
+        }
+        return;
+    }
+    if (route === "/api/google-drive/oauth/disconnect" && req.method === "POST") {
+        const refreshToken = oauthCredentials(settings).refreshToken;
+        if (refreshToken) {
+            await fetch("https://oauth2.googleapis.com/revoke", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ token: refreshToken })
+            }).catch(() => undefined);
+        }
+        clearDriveOAuthSettings();
         sendJson(res, 200, { ok: true });
         return;
     }
