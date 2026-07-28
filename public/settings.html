@@ -82,10 +82,25 @@
         <section class="settings-section">
           <div class="settings-copy">
             <h2>Workspace access</h2>
-            <p>Optionally protect the app with a simple access code.</p>
+            <p>Add up to three people. Their codes unlock the workspace only; the Railway master code also unlocks Settings.</p>
           </div>
-          <div class="settings-fields">
-            <label>4-digit access code<input name="accessPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="Optional"></label>
+          <div class="settings-fields access-people">
+            <div class="access-person">
+              <strong>Person 1</strong>
+              <label>Name<input name="user1Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
+              <label>4-digit code<input name="user1Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
+            </div>
+            <div class="access-person">
+              <strong>Person 2</strong>
+              <label>Name<input name="user2Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
+              <label>4-digit code<input name="user2Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
+            </div>
+            <div class="access-person">
+              <strong>Person 3</strong>
+              <label>Name<input name="user3Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
+              <label>4-digit code<input name="user3Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
+            </div>
+            <small>Leave both fields blank to remove a person.</small>
           </div>
         </section>
 

@@ -32,9 +32,9 @@ test("upload names are safe and predictable", () => {
 test("workbook tabs and columns match the application contract", () => {
   assert.deepEqual(sheetDefinitions, {
     Jobs: ["Job"],
-    Photos: ["Job", "Date", "Photo"],
-    Reports: ["Job", "Date", "Report"],
-    Receipt: ["Job", "Date", "Photo", "Total", "Line Items"]
+    Photos: ["Job", "Person", "Date", "Photo"],
+    Reports: ["Job", "Person", "Date", "Report"],
+    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Line Items"]
   });
 });
 

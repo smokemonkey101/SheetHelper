@@ -12,6 +12,12 @@ type Settings = {
   googlePrivateKey: string;
   googleServiceAccountEmail: string;
   spreadsheetId: string;
+  user1Name: string;
+  user1Pin: string;
+  user2Name: string;
+  user2Pin: string;
+  user3Name: string;
+  user3Pin: string;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -39,6 +45,12 @@ const maxImageBytes = 20 * 1024 * 1024;
 
 export const sheetDefinitions = {
   Jobs: ["Job"],
+  Photos: ["Job", "Person", "Date", "Photo"],
+  Reports: ["Job", "Person", "Date", "Report"],
+  Receipt: ["Job", "Person", "Date", "Photo", "Total", "Line Items"]
+} as const;
+
+const previousSheetDefinitions = {
   Photos: ["Job", "Date", "Photo"],
   Reports: ["Job", "Date", "Report"],
   Receipt: ["Job", "Date", "Photo", "Total", "Line Items"]
@@ -75,20 +87,34 @@ function defaults(): Settings {
     googleOAuthClientSecret: "",
     googlePrivateKey: "",
     googleServiceAccountEmail: "",
-    spreadsheetId: ""
+    spreadsheetId: "",
+    user1Name: "",
+    user1Pin: "",
+    user2Name: "",
+    user2Pin: "",
+    user3Name: "",
+    user3Pin: ""
   };
 }
 
 function sanitizeSettings(input: Partial<Settings>, previous = defaults()): Settings {
+  const legacyPin = clean(input.accessPin);
+  const migratingLegacyPin = legacyPin && !clean(input.user1Pin) && !clean(previous.user1Pin);
   return {
-    accessPin: clean(input.accessPin),
+    accessPin: "",
     driveFolderId: driveFolderIdFrom(input.driveFolderId),
     googleDriveRefreshToken: clean(input.googleDriveRefreshToken) || previous.googleDriveRefreshToken,
     googleOAuthClientId: clean(input.googleOAuthClientId),
     googleOAuthClientSecret: clean(input.googleOAuthClientSecret) || previous.googleOAuthClientSecret,
     googlePrivateKey: clean(input.googlePrivateKey) || previous.googlePrivateKey,
     googleServiceAccountEmail: clean(input.googleServiceAccountEmail),
-    spreadsheetId: spreadsheetIdFrom(input.spreadsheetId)
+    spreadsheetId: spreadsheetIdFrom(input.spreadsheetId),
+    user1Name: clean(input.user1Name) || (migratingLegacyPin ? "User 1" : ""),
+    user1Pin: clean(input.user1Pin) || (migratingLegacyPin ? legacyPin : ""),
+    user2Name: clean(input.user2Name),
+    user2Pin: clean(input.user2Pin),
+    user3Name: clean(input.user3Name),
+    user3Pin: clean(input.user3Pin)
   };
 }
 
@@ -265,17 +291,43 @@ function requireGoogleTargets(settings: Settings): void {
 async function ensureWorkbook(settings: Settings, token: string): Promise<void> {
   requireGoogleTargets(settings);
   const id = encodeURIComponent(settings.spreadsheetId);
-  const metadata = await googleJson<{ sheets?: Array<{ properties?: { title?: string } }> }>(
-    `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties.title`,
+  const metadata = await googleJson<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> }>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(sheetId,title)`,
     token
   );
-  const existing = new Set((metadata.sheets || []).map((sheet) => sheet.properties?.title || ""));
+  const sheetIds = new Map((metadata.sheets || []).map((sheet) => [
+    sheet.properties?.title || "",
+    sheet.properties?.sheetId
+  ]));
+  const existing = new Set(sheetIds.keys());
   const missing = Object.keys(sheetDefinitions).filter((title) => !existing.has(title));
   if (missing.length) {
     await googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${id}:batchUpdate`, token, {
       method: "POST",
       body: { requests: missing.map((title) => ({ addSheet: { properties: { title } } })) }
     });
+  }
+  for (const [title, oldHeaders] of Object.entries(previousSheetDefinitions)) {
+    const sheetId = sheetIds.get(title);
+    if (sheetId === undefined) continue;
+    const current = await googleJson<{ values?: unknown[][] }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`${title}!1:1`)}`,
+      token
+    );
+    const header = (current.values?.[0] || []).map(clean);
+    if (header.length === oldHeaders.length && oldHeaders.every((value, index) => header[index] === value)) {
+      await googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${id}:batchUpdate`, token, {
+        method: "POST",
+        body: {
+          requests: [{
+            insertDimension: {
+              range: { sheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+              inheritFromBefore: true
+            }
+          }]
+        }
+      });
+    }
   }
   await Promise.all(Object.entries(sheetDefinitions).map(([title, headers]) =>
     googleJson(
@@ -426,13 +478,14 @@ function parseCookies(req: http.IncomingMessage): Record<string, string> {
 }
 
 type AccessRole = "master" | "user";
+type AccessIdentity = { role: AccessRole; name: string };
 
-function cookieValue(role: AccessRole): string {
-  const payload = `${role}:${Date.now()}`;
+function cookieValue(identity: AccessIdentity): string {
+  const payload = JSON.stringify({ ...identity, issuedAt: Date.now() });
   return `${base64Url(payload)}.${crypto.createHmac("sha256", unlockSecret).update(payload).digest("hex")}`;
 }
 
-function cookieRole(req: http.IncomingMessage): AccessRole | null {
+function cookieIdentity(req: http.IncomingMessage): AccessIdentity | null {
   const [encoded, signature] = (parseCookies(req)[unlockCookie] || "").split(".");
   if (!encoded || !signature) return null;
   try {
@@ -441,15 +494,24 @@ function cookieRole(req: http.IncomingMessage): AccessRole | null {
     if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
       return null;
     }
-    const role = payload.split(":")[0];
-    return role === "master" || role === "user" ? role : null;
+    const parsed = JSON.parse(payload) as Partial<AccessIdentity>;
+    return (parsed.role === "master" || parsed.role === "user") && clean(parsed.name)
+      ? { role: parsed.role, name: clean(parsed.name) }
+      : null;
   } catch {
     return null;
   }
 }
 
+function configuredUsers(settings: Settings): Array<{ name: string; pin: string }> {
+  return [1, 2, 3].map((number) => ({
+    name: clean(settings[`user${number}Name` as keyof Settings]),
+    pin: clean(settings[`user${number}Pin` as keyof Settings])
+  })).filter((user) => user.name && /^\d{4}$/.test(user.pin));
+}
+
 function hasUserPin(settings: Settings): boolean {
-  return /^\d{4}$/.test(settings.accessPin);
+  return configuredUsers(settings).length > 0;
 }
 
 function hasMasterPin(): boolean {
@@ -458,6 +520,10 @@ function hasMasterPin(): boolean {
 
 function mainIsProtected(settings: Settings): boolean {
   return hasUserPin(settings) || hasMasterPin();
+}
+
+function actorName(req: http.IncomingMessage): string {
+  return cookieIdentity(req)?.name || "Unknown";
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -532,9 +598,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
   const settings = loadSettings();
   if (route === "/api/status" && req.method === "GET") {
     const { email, key } = credentials(settings);
+    const identity = cookieIdentity(req);
     sendJson(res, 200, {
-      locked: mainIsProtected(settings) && !cookieRole(req),
+      locked: mainIsProtected(settings) && !identity,
       pinConfigured: mainIsProtected(settings),
+      person: identity?.name || "",
       ready: Boolean(
         email &&
         key &&
@@ -547,7 +615,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
   }
   if (route === "/api/settings/status" && req.method === "GET") {
     sendJson(res, 200, {
-      locked: hasMasterPin() && cookieRole(req) !== "master",
+      locked: hasMasterPin() && cookieIdentity(req)?.role !== "master",
       masterPinConfigured: hasMasterPin()
     });
     return;
@@ -555,17 +623,18 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
   if (route === "/api/unlock" && req.method === "POST") {
     const { pin } = await readJson(req);
     const enteredPin = clean(pin);
-    const role: AccessRole | null = hasMasterPin() && enteredPin === masterPin
-      ? "master"
-      : hasUserPin(settings) && enteredPin === settings.accessPin
-        ? "user"
+    const matchedUser = configuredUsers(settings).find((user) => user.pin === enteredPin);
+    const identity: AccessIdentity | null = hasMasterPin() && enteredPin === masterPin
+      ? { role: "master", name: "Master" }
+      : matchedUser
+        ? { role: "user", name: matchedUser.name }
         : null;
-    if (!role) {
+    if (!identity) {
       sendJson(res, 401, { error: "That access code did not match." });
       return;
     }
-    res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue(role)}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
-    sendJson(res, 200, { ok: true, role });
+    res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue(identity)}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
+    sendJson(res, 200, { ok: true, role: identity.role, person: identity.name });
     return;
   }
   if (route === "/api/settings/unlock" && req.method === "POST") {
@@ -574,7 +643,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       sendJson(res, 401, { error: "Enter the master access code." });
       return;
     }
-    res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue("master")}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
+    res.setHeader("Set-Cookie", `${unlockCookie}=${cookieValue({ role: "master", name: "Master" })}; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax`);
     sendJson(res, 200, { ok: true, role: "master" });
     return;
   }
@@ -584,11 +653,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     "/api/google-drive/oauth/callback",
     "/api/google-drive/oauth/disconnect"
   ]);
-  if (masterOnlyRoutes.has(route) && hasMasterPin() && cookieRole(req) !== "master") {
+  if (masterOnlyRoutes.has(route) && hasMasterPin() && cookieIdentity(req)?.role !== "master") {
     sendJson(res, 401, { error: "The master access code is required.", locked: true });
     return;
   }
-  if (mainIsProtected(settings) && !cookieRole(req)) {
+  if (mainIsProtected(settings) && !cookieIdentity(req)) {
     sendJson(res, 401, { error: "Unlock the site first.", locked: true });
     return;
   }
@@ -605,14 +674,35 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       googlePrivateKey: "",
       googleServiceAccountEmail: email,
       hasGooglePrivateKey: Boolean(key),
-      spreadsheetId: settings.spreadsheetId
+      spreadsheetId: settings.spreadsheetId,
+      user1Name: settings.user1Name,
+      user1Pin: settings.user1Pin,
+      user2Name: settings.user2Name,
+      user2Pin: settings.user2Pin,
+      user3Name: settings.user3Name,
+      user3Pin: settings.user3Pin
     });
     return;
   }
   if (route === "/api/config" && req.method === "POST") {
     const body = await readJson(req) as Partial<Settings>;
-    if (clean(body.accessPin) && !/^\d{4}$/.test(clean(body.accessPin))) {
-      throw new Error("The access code must be exactly four digits.");
+    const users = [1, 2, 3].map((number) => ({
+      name: clean(body[`user${number}Name` as keyof Settings]),
+      pin: clean(body[`user${number}Pin` as keyof Settings])
+    }));
+    for (const user of users) {
+      if (Boolean(user.name) !== Boolean(user.pin)) {
+        throw new Error("Each person needs both a name and a 4-digit code.");
+      }
+      if (user.pin && !/^\d{4}$/.test(user.pin)) {
+        throw new Error("Each person code must be exactly four digits.");
+      }
+      if (user.name.length > 80) throw new Error("Person names must be 80 characters or fewer.");
+    }
+    const pins = users.map((user) => user.pin).filter(Boolean);
+    if (new Set(pins).size !== pins.length) throw new Error("Each person must have a different code.");
+    if (hasMasterPin() && pins.includes(masterPin)) {
+      throw new Error("A person code cannot match the master code.");
     }
     saveSettings(body);
     sendJson(res, 200, { ok: true });
@@ -719,7 +809,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     if (!job || !report) throw new Error("Choose a job and enter a report.");
     if (report.length > 10000) throw new Error("Report is too long.");
     await validateJob(settings, job);
-    await appendSheetRow(settings, "Reports", [job, today(), report]);
+    await appendSheetRow(settings, "Reports", [job, actorName(req), today(), report]);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -733,7 +823,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     await validateJob(settings, job);
     const date = today();
     const link = await uploadDriveImage(settings, image, photoFileName(job, date, index));
-    await appendSheetRow(settings, "Photos", [job, date, link]);
+    await appendSheetRow(settings, "Photos", [job, actorName(req), date, link]);
     sendJson(res, 200, { ok: true, link });
     return;
   }
@@ -750,7 +840,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       readReceipt(settings, image)
     ]);
     const parsed = parseReceiptText(receiptText);
-    await appendSheetRow(settings, "Receipt", [job, date, link, parsed.total, parsed.lineItems]);
+    await appendSheetRow(settings, "Receipt", [job, actorName(req), date, link, parsed.total, parsed.lineItems]);
     sendJson(res, 200, { ok: true, link, ...parsed });
     return;
   }
