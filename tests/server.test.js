@@ -20,7 +20,33 @@ test("receipt parser finds the final total and purchased items", () => {
     VISA 18.93
   `);
   assert.equal(parsed.total, "18.93");
-  assert.equal(parsed.lineItems, "Hammer — 12.99\nBox of nails — 4.50");
+  assert.deepEqual(parsed.lineItems, [
+    "Item: Hammer, Amount: 1, Cost Per: 12.99",
+    "Item: Box of nails, Amount: 1, Cost Per: 4.50"
+  ]);
+});
+
+test("receipt parser handles split totals and quantity-at-unit-price items", () => {
+  const parsed = parseReceiptText(`
+    HOME IMPROVEMENT STORE
+    27 GAL Tough Storage TOTE BLK/YLW
+    2018.47
+    36.94
+    Deck Screws
+    3 @ 7.35
+    22.05
+    SUBTOTAL
+    58.99
+    TAX
+    5.16
+    TOTAL
+    $64.15
+  `);
+  assert.equal(parsed.total, "64.15");
+  assert.deepEqual(parsed.lineItems, [
+    "Item: 27 GAL Tough Storage TOTE BLK/YLW, Amount: 2, Cost Per: 18.47",
+    "Item: Deck Screws, Amount: 3, Cost Per: 7.35"
+  ]);
 });
 
 test("upload names are safe and predictable", () => {
@@ -34,7 +60,10 @@ test("workbook tabs and columns match the application contract", () => {
     Jobs: ["Job"],
     Photos: ["Job", "Person", "Date", "Photo"],
     Reports: ["Job", "Person", "Date", "Report"],
-    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Line Items"]
+    Receipt: [
+      "Job", "Person", "Date", "Photo", "Total",
+      ...Array.from({ length: 20 }, (_, index) => `Line Item ${index + 1}`)
+    ]
   });
 });
 

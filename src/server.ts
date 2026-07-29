@@ -47,7 +47,10 @@ export const sheetDefinitions = {
   Jobs: ["Job"],
   Photos: ["Job", "Person", "Date", "Photo"],
   Reports: ["Job", "Person", "Date", "Report"],
-  Receipt: ["Job", "Person", "Date", "Photo", "Total", "Line Items"]
+  Receipt: [
+    "Job", "Person", "Date", "Photo", "Total",
+    ...Array.from({ length: 20 }, (_, index) => `Line Item ${index + 1}`)
+  ]
 } as const;
 
 const previousSheetDefinitions = {
@@ -452,21 +455,91 @@ async function readReceipt(settings: Settings, image: Buffer): Promise<string> {
   return response?.fullTextAnnotation?.text || "";
 }
 
-export function parseReceiptText(text: string): { total: string; lineItems: string } {
+export function parseReceiptText(text: string): { total: string; lineItems: string[] } {
   const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-  const money = /(?:[$€£]\s*)?(\d{1,6}[.,]\d{2})\b/;
-  const totalCandidates = lines
-    .map((line, index) => ({ line, index, match: line.match(money) }))
-    .filter((entry) => entry.match && /\b(grand\s*total|amount\s*due|balance\s*due|total)\b/i.test(entry.line))
-    .filter((entry) => !/\b(subtotal|tax total|total tax)\b/i.test(entry.line));
-  const chosen = totalCandidates.at(-1);
-  const total = chosen?.match ? chosen.match[1].replace(",", ".") : "";
-  const excluded = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount due)\b/i;
-  const items = lines
-    .filter((line, index) => index !== chosen?.index && money.test(line) && !excluded.test(line))
-    .map((line) => line.replace(/\s+([$€£]?\s*\d{1,6}[.,]\d{2})\s*$/, " — $1"))
-    .slice(0, 50);
-  return { total, lineItems: items.join("\n") };
+  const moneyPattern = /[$€£]?\s*(\d{1,6}[.,]\d{2})\b/g;
+  const normalizeMoney = (value: string) => Number(value.replace(",", ".")).toFixed(2);
+  const moneyValues = (line: string) =>
+    [...line.matchAll(moneyPattern)].map((match) => normalizeMoney(match[1]));
+  const totalLabel = /\b(grand\s*total|amount\s*due|balance\s*due|total)\b/i;
+  const excludedTotal = /\b(subtotal|tax\s*total|total\s*tax)\b/i;
+  let total = "";
+  let totalIndex = -1;
+
+  for (let index = lines.length - 1; index >= 0 && !total; index -= 1) {
+    if (!totalLabel.test(lines[index]) || excludedTotal.test(lines[index])) continue;
+    for (let nearby = index; nearby <= Math.min(lines.length - 1, index + 2); nearby += 1) {
+      const values = moneyValues(lines[nearby]);
+      if (values.length) {
+        total = values.at(-1) || "";
+        totalIndex = nearby;
+        break;
+      }
+    }
+  }
+  if (!total) {
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const currencyMatch = lines[index].match(/[$€£]\s*(\d{1,6}[.,]\d{2})\b/);
+      if (currencyMatch) {
+        total = normalizeMoney(currencyMatch[1]);
+        totalIndex = index;
+        break;
+      }
+    }
+  }
+  if (!total) {
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const values = moneyValues(lines[index]).filter((value) => Number(value) < 10000);
+      if (values.length) {
+        total = values.at(-1) || "";
+        totalIndex = index;
+        break;
+      }
+    }
+  }
+
+  const excludedItem = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount\s*due|tender)\b/i;
+  const isDescription = (line: string) =>
+    /[a-z]/i.test(line) && !excludedItem.test(line) && !/^\d{8,}$/.test(line.replace(/\D/g, ""));
+  const nearestDescription = (index: number): string => {
+    for (let previous = index - 1; previous >= Math.max(0, index - 3); previous -= 1) {
+      if (isDescription(lines[previous]) && !moneyValues(lines[previous]).length) return lines[previous];
+    }
+    return "";
+  };
+  const items: string[] = [];
+  const seen = new Set<string>();
+  const consumedPriceLines = new Set<number>();
+  const addItem = (description: string, amount: string, costPer: string) => {
+    const item = description.replace(/^[\s#*-]+/, "").replace(/\s+/g, " ").trim();
+    const key = `${item}|${amount}|${costPer}`;
+    if (!item || seen.has(key)) return;
+    seen.add(key);
+    items.push(`Item: ${item}, Amount: ${amount}, Cost Per: ${costPer}`);
+  };
+
+  for (let index = 0; index < lines.length && items.length < 20; index += 1) {
+    const line = lines[index];
+    if (index === totalIndex || consumedPriceLines.has(index) || excludedItem.test(line)) continue;
+    const quantityMatch = line.match(/^(.*?)(\d{1,3})\s*[@xX]\s*[$€£]?\s*(\d{1,6}[.,]\d{2})\b/);
+    if (quantityMatch) {
+      addItem(quantityMatch[1].trim() || nearestDescription(index), quantityMatch[2], normalizeMoney(quantityMatch[3]));
+      if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || "")) consumedPriceLines.add(index + 1);
+      continue;
+    }
+    const joinedQuantity = line.match(/^(\d{1,2})0(\d{2,4}[.,]\d{2})$/) ||
+      line.match(/^(\d{1,2})(\d{2,5}[.,]\d{2})$/);
+    if (joinedQuantity) {
+      addItem(nearestDescription(index), joinedQuantity[1], normalizeMoney(joinedQuantity[2]));
+      if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || "")) consumedPriceLines.add(index + 1);
+      continue;
+    }
+    const values = moneyValues(line);
+    if (!values.length) continue;
+    const description = line.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\b.*$/, "").trim() || nearestDescription(index);
+    if (isDescription(description)) addItem(description, "1", values.at(-1) || "");
+  }
+  return { total, lineItems: items };
 }
 
 function parseCookies(req: http.IncomingMessage): Record<string, string> {
@@ -840,7 +913,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       readReceipt(settings, image)
     ]);
     const parsed = parseReceiptText(receiptText);
-    await appendSheetRow(settings, "Receipt", [job, actorName(req), date, link, parsed.total, parsed.lineItems]);
+    await appendSheetRow(settings, "Receipt", [job, actorName(req), date, link, parsed.total, ...parsed.lineItems]);
     sendJson(res, 200, { ok: true, link, ...parsed });
     return;
   }
