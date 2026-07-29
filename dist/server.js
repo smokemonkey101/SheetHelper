@@ -61,10 +61,7 @@ exports.sheetDefinitions = {
     Jobs: ["Job"],
     Photos: ["Job", "Person", "Date", "Photo"],
     Reports: ["Job", "Person", "Date", "Report"],
-    Receipt: [
-        "Job", "Person", "Date", "Photo", "Total",
-        ...Array.from({ length: 20 }, (_, index) => `Line Item ${index + 1}`)
-    ]
+    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"]
 };
 const previousSheetDefinitions = {
     Photos: ["Job", "Date", "Photo"],
@@ -318,7 +315,11 @@ async function ensureWorkbook(settings, token) {
             });
         }
     }
-    await Promise.all(Object.entries(exports.sheetDefinitions).map(([title, headers]) => googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`${title}!A1:${String.fromCharCode(64 + headers.length)}1`)}?valueInputOption=RAW`, token, { method: "PUT", body: { values: [headers] } })));
+    await Promise.all(Object.entries(exports.sheetDefinitions).map(([title, headers]) => {
+        const width = title === "Receipt" ? 25 : headers.length;
+        const headerRow = [...headers, ...Array.from({ length: width - headers.length }, () => "")];
+        return googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`${title}!A1:${String.fromCharCode(64 + width)}1`)}?valueInputOption=RAW`, token, { method: "PUT", body: { values: [headerRow] } });
+    }));
 }
 async function sheetToken(settings) {
     return googleToken(settings, ["https://www.googleapis.com/auth/spreadsheets"]);
@@ -337,9 +338,13 @@ async function validateJob(settings, job) {
         throw new Error("That job is no longer listed on the Jobs sheet.");
 }
 async function appendSheetRow(settings, tab, values) {
+    await appendSheetRows(settings, tab, [values]);
+}
+async function appendSheetRows(settings, tab, rows) {
     const token = await sheetToken(settings);
     await ensureWorkbook(settings, token);
-    await googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(settings.spreadsheetId)}/values/${encodeURIComponent(`${tab}!A:${String.fromCharCode(64 + values.length)}`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, token, { method: "POST", body: { values: [values] } });
+    const width = Math.max(...rows.map((row) => row.length));
+    await googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(settings.spreadsheetId)}/values/${encodeURIComponent(`${tab}!A:${String.fromCharCode(64 + width)}`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, token, { method: "POST", body: { values: rows } });
 }
 function safeName(value) {
     return value.normalize("NFKD")
@@ -454,53 +459,57 @@ function parseReceiptText(text) {
             }
         }
     }
-    const excludedItem = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount\s*due|tender)\b/i;
-    const isDescription = (line) => /[a-z]/i.test(line) && !excludedItem.test(line) && !/^\d{8,}$/.test(line.replace(/\D/g, ""));
-    const nearestDescription = (index) => {
-        for (let previous = index - 1; previous >= Math.max(0, index - 3); previous -= 1) {
-            if (isDescription(lines[previous]) && !moneyValues(lines[previous]).length)
-                return lines[previous];
+    const store = /\bhome\s*depot\b/i.test(text)
+        ? "Home Depot"
+        : clean(lines.find((line) => /[a-z]{3}/i.test(line) && !/\d/.test(line)) || "Unknown Store")
+            .replace(/\b(the)\b/ig, "")
+            .replace(/\s+/g, " ")
+            .trim();
+    const lineItems = [];
+    const skuIndexes = lines
+        .map((line, index) => ({ index, match: line.match(/^\s*(\d{8,14})\s+(.+)$/) }))
+        .filter((entry) => entry.match);
+    for (let position = 0; position < skuIndexes.length && lineItems.length < 50; position += 1) {
+        const entry = skuIndexes[position];
+        const end = skuIndexes[position + 1]?.index ?? lines.findIndex((line, index) => index > entry.index && /\bsubtotal\b/i.test(line));
+        const blockEnd = end > entry.index ? end : Math.min(lines.length, entry.index + 5);
+        const block = lines.slice(entry.index, blockEnd);
+        const firstLine = entry.match?.[2] || "";
+        const firstPrices = moneyValues(firstLine);
+        const item = firstLine.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\s*$/, "").trim();
+        let amount = "1";
+        let costPer = firstPrices.at(-1) || "";
+        for (const blockLine of block) {
+            const quantity = blockLine.match(/(\d{1,3})\s*[@xX]\s*[$€£]?\s*(\d{1,6}[.,]\d{2})/);
+            const joined = blockLine.match(/^(\d{1,2})0(\d{2,4}[.,]\d{2})$/);
+            if (quantity) {
+                amount = quantity[1];
+                costPer = normalizeMoney(quantity[2]);
+                break;
+            }
+            if (joined) {
+                amount = joined[1];
+                costPer = normalizeMoney(joined[2]);
+                break;
+            }
         }
-        return "";
-    };
-    const items = [];
-    const seen = new Set();
-    const consumedPriceLines = new Set();
-    const addItem = (description, amount, costPer) => {
-        const item = description.replace(/^[\s#*-]+/, "").replace(/\s+/g, " ").trim();
-        const key = `${item}|${amount}|${costPer}`;
-        if (!item || seen.has(key))
-            return;
-        seen.add(key);
-        items.push(`Item: ${item}, Amount: ${amount}, Cost Per: ${costPer}`);
-    };
-    for (let index = 0; index < lines.length && items.length < 20; index += 1) {
-        const line = lines[index];
-        if (index === totalIndex || consumedPriceLines.has(index) || excludedItem.test(line))
-            continue;
-        const quantityMatch = line.match(/^(.*?)(\d{1,3})\s*[@xX]\s*[$€£]?\s*(\d{1,6}[.,]\d{2})\b/);
-        if (quantityMatch) {
-            addItem(quantityMatch[1].trim() || nearestDescription(index), quantityMatch[2], normalizeMoney(quantityMatch[3]));
-            if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || ""))
-                consumedPriceLines.add(index + 1);
-            continue;
-        }
-        const joinedQuantity = line.match(/^(\d{1,2})0(\d{2,4}[.,]\d{2})$/) ||
-            line.match(/^(\d{1,2})(\d{2,5}[.,]\d{2})$/);
-        if (joinedQuantity) {
-            addItem(nearestDescription(index), joinedQuantity[1], normalizeMoney(joinedQuantity[2]));
-            if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || ""))
-                consumedPriceLines.add(index + 1);
-            continue;
-        }
-        const values = moneyValues(line);
-        if (!values.length)
-            continue;
-        const description = line.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\b.*$/, "").trim() || nearestDescription(index);
-        if (isDescription(description))
-            addItem(description, "1", values.at(-1) || "");
+        if (item && costPer)
+            lineItems.push({ item, amount, costPer });
     }
-    return { total, lineItems: items };
+    if (!lineItems.length) {
+        const excludedItem = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount\s*due|tender)\b/i;
+        for (const line of lines) {
+            if (excludedItem.test(line))
+                continue;
+            const values = moneyValues(line);
+            if (!values.length)
+                continue;
+            const item = line.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\s*$/, "").trim();
+            if (/[a-z]/i.test(item))
+                lineItems.push({ item, amount: "1", costPer: values.at(-1) || "" });
+        }
+    }
+    return { total, store, lineItems };
 }
 function parseCookies(req) {
     return String(req.headers.cookie || "").split(";").reduce((all, item) => {
@@ -859,7 +868,11 @@ async function api(req, res, route) {
             readReceipt(settings, image)
         ]);
         const parsed = parseReceiptText(receiptText);
-        await appendSheetRow(settings, "Receipt", [job, actorName(req), date, link, parsed.total, ...parsed.lineItems]);
+        const base = [job, actorName(req), date, link, parsed.total, parsed.store];
+        const rows = parsed.lineItems.length
+            ? parsed.lineItems.map((item) => [...base, item.item, item.amount, item.costPer])
+            : [[...base, "", "", ""]];
+        await appendSheetRows(settings, "Receipt", rows);
         sendJson(res, 200, { ok: true, link, ...parsed });
         return;
     }

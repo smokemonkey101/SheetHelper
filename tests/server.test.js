@@ -21,18 +21,20 @@ test("receipt parser finds the final total and purchased items", () => {
   `);
   assert.equal(parsed.total, "18.93");
   assert.deepEqual(parsed.lineItems, [
-    "Item: Hammer, Amount: 1, Cost Per: 12.99",
-    "Item: Box of nails, Amount: 1, Cost Per: 4.50"
+    { item: "Hammer", amount: "1", costPer: "12.99" },
+    { item: "Box of nails", amount: "1", costPer: "4.50" }
   ]);
 });
 
 test("receipt parser handles split totals and quantity-at-unit-price items", () => {
   const parsed = parseReceiptText(`
-    HOME IMPROVEMENT STORE
-    27 GAL Tough Storage TOTE BLK/YLW
+    THE HOME DEPOT
+    066785314502 HDX TOTE <A>
+    27 GAL TOUGH STORAGE TOTE BLK/YLW
     2018.47
     36.94
-    Deck Screws
+    049206111873 PAINT BRSH <A>
+    2 IN ANGLED SASH POLY BRUSH
     3 @ 7.35
     22.05
     SUBTOTAL
@@ -43,9 +45,10 @@ test("receipt parser handles split totals and quantity-at-unit-price items", () 
     $64.15
   `);
   assert.equal(parsed.total, "64.15");
+  assert.equal(parsed.store, "Home Depot");
   assert.deepEqual(parsed.lineItems, [
-    "Item: 27 GAL Tough Storage TOTE BLK/YLW, Amount: 2, Cost Per: 18.47",
-    "Item: Deck Screws, Amount: 3, Cost Per: 7.35"
+    { item: "HDX TOTE <A>", amount: "2", costPer: "18.47" },
+    { item: "PAINT BRSH <A>", amount: "3", costPer: "7.35" }
   ]);
 });
 
@@ -60,10 +63,7 @@ test("workbook tabs and columns match the application contract", () => {
     Jobs: ["Job"],
     Photos: ["Job", "Person", "Date", "Photo"],
     Reports: ["Job", "Person", "Date", "Report"],
-    Receipt: [
-      "Job", "Person", "Date", "Photo", "Total",
-      ...Array.from({ length: 20 }, (_, index) => `Line Item ${index + 1}`)
-    ]
+    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"]
   });
 });
 

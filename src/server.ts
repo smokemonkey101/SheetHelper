@@ -27,6 +27,7 @@ type GoogleTokenResponse = {
   error_description?: string;
   refresh_token?: string;
 };
+type ReceiptLineItem = { item: string; amount: string; costPer: string };
 
 const port = Number(process.env.PORT || 3000);
 const rootDir = path.join(__dirname, "..");
@@ -47,10 +48,7 @@ export const sheetDefinitions = {
   Jobs: ["Job"],
   Photos: ["Job", "Person", "Date", "Photo"],
   Reports: ["Job", "Person", "Date", "Report"],
-  Receipt: [
-    "Job", "Person", "Date", "Photo", "Total",
-    ...Array.from({ length: 20 }, (_, index) => `Line Item ${index + 1}`)
-  ]
+  Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"]
 } as const;
 
 const previousSheetDefinitions = {
@@ -332,13 +330,15 @@ async function ensureWorkbook(settings: Settings, token: string): Promise<void> 
       });
     }
   }
-  await Promise.all(Object.entries(sheetDefinitions).map(([title, headers]) =>
-    googleJson(
-      `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`${title}!A1:${String.fromCharCode(64 + headers.length)}1`)}?valueInputOption=RAW`,
+  await Promise.all(Object.entries(sheetDefinitions).map(([title, headers]) => {
+    const width = title === "Receipt" ? 25 : headers.length;
+    const headerRow = [...headers, ...Array.from({ length: width - headers.length }, () => "")];
+    return googleJson(
+      `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`${title}!A1:${String.fromCharCode(64 + width)}1`)}?valueInputOption=RAW`,
       token,
-      { method: "PUT", body: { values: [headers] } }
-    )
-  ));
+      { method: "PUT", body: { values: [headerRow] } }
+    );
+  }));
 }
 
 async function sheetToken(settings: Settings): Promise<string> {
@@ -363,12 +363,21 @@ async function validateJob(settings: Settings, job: string): Promise<void> {
 }
 
 async function appendSheetRow(settings: Settings, tab: keyof typeof sheetDefinitions, values: string[]): Promise<void> {
+  await appendSheetRows(settings, tab, [values]);
+}
+
+async function appendSheetRows(
+  settings: Settings,
+  tab: keyof typeof sheetDefinitions,
+  rows: string[][]
+): Promise<void> {
   const token = await sheetToken(settings);
   await ensureWorkbook(settings, token);
+  const width = Math.max(...rows.map((row) => row.length));
   await googleJson(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(settings.spreadsheetId)}/values/${encodeURIComponent(`${tab}!A:${String.fromCharCode(64 + values.length)}`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(settings.spreadsheetId)}/values/${encodeURIComponent(`${tab}!A:${String.fromCharCode(64 + width)}`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     token,
-    { method: "POST", body: { values: [values] } }
+    { method: "POST", body: { values: rows } }
   );
 }
 
@@ -455,7 +464,7 @@ async function readReceipt(settings: Settings, image: Buffer): Promise<string> {
   return response?.fullTextAnnotation?.text || "";
 }
 
-export function parseReceiptText(text: string): { total: string; lineItems: string[] } {
+export function parseReceiptText(text: string): { total: string; store: string; lineItems: ReceiptLineItem[] } {
   const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   const moneyPattern = /[$€£]?\s*(\d{1,6}[.,]\d{2})\b/g;
   const normalizeMoney = (value: string) => Number(value.replace(",", ".")).toFixed(2);
@@ -498,48 +507,55 @@ export function parseReceiptText(text: string): { total: string; lineItems: stri
     }
   }
 
-  const excludedItem = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount\s*due|tender)\b/i;
-  const isDescription = (line: string) =>
-    /[a-z]/i.test(line) && !excludedItem.test(line) && !/^\d{8,}$/.test(line.replace(/\D/g, ""));
-  const nearestDescription = (index: number): string => {
-    for (let previous = index - 1; previous >= Math.max(0, index - 3); previous -= 1) {
-      if (isDescription(lines[previous]) && !moneyValues(lines[previous]).length) return lines[previous];
+  const store = /\bhome\s*depot\b/i.test(text)
+    ? "Home Depot"
+    : clean(lines.find((line) => /[a-z]{3}/i.test(line) && !/\d/.test(line)) || "Unknown Store")
+      .replace(/\b(the)\b/ig, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const lineItems: ReceiptLineItem[] = [];
+  const skuIndexes = lines
+    .map((line, index) => ({ index, match: line.match(/^\s*(\d{8,14})\s+(.+)$/) }))
+    .filter((entry) => entry.match);
+  for (let position = 0; position < skuIndexes.length && lineItems.length < 50; position += 1) {
+    const entry = skuIndexes[position];
+    const end = skuIndexes[position + 1]?.index ?? lines.findIndex(
+      (line, index) => index > entry.index && /\bsubtotal\b/i.test(line)
+    );
+    const blockEnd = end > entry.index ? end : Math.min(lines.length, entry.index + 5);
+    const block = lines.slice(entry.index, blockEnd);
+    const firstLine = entry.match?.[2] || "";
+    const firstPrices = moneyValues(firstLine);
+    const item = firstLine.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\s*$/, "").trim();
+    let amount = "1";
+    let costPer = firstPrices.at(-1) || "";
+    for (const blockLine of block) {
+      const quantity = blockLine.match(/(\d{1,3})\s*[@xX]\s*[$€£]?\s*(\d{1,6}[.,]\d{2})/);
+      const joined = blockLine.match(/^(\d{1,2})0(\d{2,4}[.,]\d{2})$/);
+      if (quantity) {
+        amount = quantity[1];
+        costPer = normalizeMoney(quantity[2]);
+        break;
+      }
+      if (joined) {
+        amount = joined[1];
+        costPer = normalizeMoney(joined[2]);
+        break;
+      }
     }
-    return "";
-  };
-  const items: string[] = [];
-  const seen = new Set<string>();
-  const consumedPriceLines = new Set<number>();
-  const addItem = (description: string, amount: string, costPer: string) => {
-    const item = description.replace(/^[\s#*-]+/, "").replace(/\s+/g, " ").trim();
-    const key = `${item}|${amount}|${costPer}`;
-    if (!item || seen.has(key)) return;
-    seen.add(key);
-    items.push(`Item: ${item}, Amount: ${amount}, Cost Per: ${costPer}`);
-  };
-
-  for (let index = 0; index < lines.length && items.length < 20; index += 1) {
-    const line = lines[index];
-    if (index === totalIndex || consumedPriceLines.has(index) || excludedItem.test(line)) continue;
-    const quantityMatch = line.match(/^(.*?)(\d{1,3})\s*[@xX]\s*[$€£]?\s*(\d{1,6}[.,]\d{2})\b/);
-    if (quantityMatch) {
-      addItem(quantityMatch[1].trim() || nearestDescription(index), quantityMatch[2], normalizeMoney(quantityMatch[3]));
-      if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || "")) consumedPriceLines.add(index + 1);
-      continue;
-    }
-    const joinedQuantity = line.match(/^(\d{1,2})0(\d{2,4}[.,]\d{2})$/) ||
-      line.match(/^(\d{1,2})(\d{2,5}[.,]\d{2})$/);
-    if (joinedQuantity) {
-      addItem(nearestDescription(index), joinedQuantity[1], normalizeMoney(joinedQuantity[2]));
-      if (/^[$€£]?\s*\d{1,6}[.,]\d{2}$/.test(lines[index + 1] || "")) consumedPriceLines.add(index + 1);
-      continue;
-    }
-    const values = moneyValues(line);
-    if (!values.length) continue;
-    const description = line.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\b.*$/, "").trim() || nearestDescription(index);
-    if (isDescription(description)) addItem(description, "1", values.at(-1) || "");
+    if (item && costPer) lineItems.push({ item, amount, costPer });
   }
-  return { total, lineItems: items };
+  if (!lineItems.length) {
+    const excludedItem = /\b(subtotal|total|tax|change|cash|credit|debit|visa|mastercard|amex|receipt|thank|payment|balance|amount\s*due|tender)\b/i;
+    for (const line of lines) {
+      if (excludedItem.test(line)) continue;
+      const values = moneyValues(line);
+      if (!values.length) continue;
+      const item = line.replace(/[$€£]?\s*\d{1,6}[.,]\d{2}\s*$/, "").trim();
+      if (/[a-z]/i.test(item)) lineItems.push({ item, amount: "1", costPer: values.at(-1) || "" });
+    }
+  }
+  return { total, store, lineItems };
 }
 
 function parseCookies(req: http.IncomingMessage): Record<string, string> {
@@ -913,7 +929,11 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       readReceipt(settings, image)
     ]);
     const parsed = parseReceiptText(receiptText);
-    await appendSheetRow(settings, "Receipt", [job, actorName(req), date, link, parsed.total, ...parsed.lineItems]);
+    const base = [job, actorName(req), date, link, parsed.total, parsed.store];
+    const rows = parsed.lineItems.length
+      ? parsed.lineItems.map((item) => [...base, item.item, item.amount, item.costPer])
+      : [[...base, "", "", ""]];
+    await appendSheetRows(settings, "Receipt", rows);
     sendJson(res, 200, { ok: true, link, ...parsed });
     return;
   }
