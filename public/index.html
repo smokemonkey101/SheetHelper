@@ -45,10 +45,10 @@
           <form id="photoForm">
             <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
             <label class="dropzone" for="photoFiles">
-              <input id="photoFiles" type="file" accept="image/*" multiple required>
+              <input id="photoFiles" type="file" multiple required>
               <span class="upload-symbol">＋</span>
               <strong>Choose photos</strong>
-              <small id="photoFileLabel">JPG, PNG, or camera photos</small>
+              <small id="photoFileLabel">Images, PDFs, and other files</small>
             </label>
             <button class="primary" type="submit">Upload photos</button>
           </form>
@@ -73,12 +73,44 @@
           <form id="receiptForm">
             <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
             <label class="dropzone" for="receiptFile">
-              <input id="receiptFile" type="file" accept="image/*" required>
+              <input id="receiptFile" type="file" required>
               <span class="upload-symbol">＋</span>
               <strong>Choose one receipt</strong>
               <small id="receiptFileLabel">Make sure the total is clearly visible</small>
             </label>
             <button class="primary" type="submit">Upload receipt</button>
+          </form>
+        </article>
+
+        <article class="action-card task-card">
+          <div class="card-icon purple"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-8 14-5-5 1.41-1.41L11 14.17l5.59-5.59L18 10z"/></svg></div>
+          <h2>Task update</h2>
+          <p>Select a job task, add a note, then mark it updated or finished.</p>
+          <form id="taskForm">
+            <label>Target job<select id="taskJob" class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
+            <label>Task<select id="taskSelect" name="taskId" required disabled><option value="">Choose a job first</option></select></label>
+            <label>Update<textarea name="input" rows="5" maxlength="5000" placeholder="What changed or was completed?" required></textarea></label>
+            <div class="task-actions">
+              <button class="task-update-button" type="submit" name="action" value="update">Update</button>
+              <button class="task-finished-button" type="submit" name="action" value="finished">Finished</button>
+            </div>
+          </form>
+        </article>
+
+        <article id="masterFileCard" class="action-card master-file-card" hidden>
+          <div class="card-icon teal"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8zm1 17H7v-2h8zm2-4H7v-2h10zm-4-4V3.5L18.5 9H13z"/></svg></div>
+          <h2>Upload files</h2>
+          <p>Master-only files routed to the selected sheet tab.</p>
+          <form id="masterFileForm">
+            <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
+            <label>Type<select name="type" required><option value="">Choose a type</option><option>Accounting</option><option>Leads</option><option>Other</option></select></label>
+            <label class="dropzone" for="masterFiles">
+              <input id="masterFiles" type="file" multiple required>
+              <span class="upload-symbol">＋</span>
+              <strong>Choose files</strong>
+              <small id="masterFileLabel">Any file type, up to 20 MB each</small>
+            </label>
+            <button class="primary" type="submit">Upload files</button>
           </form>
         </article>
       </section>

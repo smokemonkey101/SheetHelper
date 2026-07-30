@@ -42,13 +42,17 @@ const unlockSecret = clean(process.env.SITE_UNLOCK_SECRET) || crypto.randomBytes
 const unlockCookie = "sheet_helper_unlock";
 const oauthStateCookie = "sheet_helper_drive_oauth";
 const maxJsonBytes = 2 * 1024 * 1024;
-const maxImageBytes = 20 * 1024 * 1024;
+const maxFileBytes = 20 * 1024 * 1024;
 
 export const sheetDefinitions = {
   Jobs: ["Job"],
   Photos: ["Job", "Person", "Date", "Photo"],
   Reports: ["Job", "Person", "Date", "Report"],
-  Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"]
+  Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"],
+  Tasks: ["Job", "Person", "Date", "Task", "Input"],
+  Accounting: ["Job", "Person", "Date", "File"],
+  Leads: ["Job", "Person", "Date", "File"],
+  Other: ["Job", "Person", "Date", "File"]
 } as const;
 
 const previousSheetDefinitions = {
@@ -362,6 +366,70 @@ async function validateJob(settings: Settings, job: string): Promise<void> {
   if (!jobs.includes(job)) throw new Error("That job is no longer listed on the Jobs sheet.");
 }
 
+type JobTask = { id: string; text: string; rowIndex: number; columnIndex: number };
+
+export function jobTasksFromRows(rows: unknown[][], job: string): JobTask[] {
+  const tasks: JobTask[] = [];
+  rows.forEach((row, resultRowIndex) => {
+    if (clean(row[0]) !== job) return;
+    row.slice(1).forEach((value, taskOffset) => {
+      const text = clean(value);
+      if (!text) return;
+      const rowIndex = resultRowIndex + 1;
+      const columnIndex = taskOffset + 1;
+      tasks.push({ id: `${rowIndex}:${columnIndex}`, text, rowIndex, columnIndex });
+    });
+  });
+  return tasks;
+}
+
+async function getJobTasks(settings: Settings, job: string): Promise<JobTask[]> {
+  const token = await sheetToken(settings);
+  await ensureWorkbook(settings, token);
+  const result = await googleJson<{ values?: unknown[][] }>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(settings.spreadsheetId)}/values/${encodeURIComponent("Jobs!A2:ZZ")}`,
+    token
+  );
+  return jobTasksFromRows(result.values || [], job);
+}
+
+async function colorJobTask(
+  settings: Settings,
+  task: JobTask,
+  action: "finished" | "update"
+): Promise<void> {
+  const token = await sheetToken(settings);
+  await ensureWorkbook(settings, token);
+  const id = encodeURIComponent(settings.spreadsheetId);
+  const metadata = await googleJson<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> }>(
+    `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(sheetId,title)`,
+    token
+  );
+  const jobsSheetId = metadata.sheets?.find((sheet) => sheet.properties?.title === "Jobs")?.properties?.sheetId;
+  if (jobsSheetId === undefined) throw new Error("The Jobs sheet tab was not found.");
+  const backgroundColor = action === "finished"
+    ? { red: 0.96, green: 0.49, blue: 0.46 }
+    : { red: 1, green: 0.85, blue: 0.4 };
+  await googleJson(`https://sheets.googleapis.com/v4/spreadsheets/${id}:batchUpdate`, token, {
+    method: "POST",
+    body: {
+      requests: [{
+        updateCells: {
+          range: {
+            sheetId: jobsSheetId,
+            startRowIndex: task.rowIndex,
+            endRowIndex: task.rowIndex + 1,
+            startColumnIndex: task.columnIndex,
+            endColumnIndex: task.columnIndex + 1
+          },
+          rows: [{ values: [{ userEnteredFormat: { backgroundColor } }] }],
+          fields: "userEnteredFormat.backgroundColor"
+        }
+      }]
+    }
+  });
+}
+
 async function appendSheetRow(settings: Settings, tab: keyof typeof sheetDefinitions, values: string[]): Promise<void> {
   await appendSheetRows(settings, tab, [values]);
 }
@@ -406,7 +474,42 @@ export function receiptFileName(job: string, date: string): string {
   return `${safeName(job)}_receipt_${date}.jpg`;
 }
 
-async function uploadDriveImage(settings: Settings, file: Buffer, fileName: string): Promise<string> {
+function safeExtension(originalName: string, mimeType: string): string {
+  const known: Record<string, string> = {
+    "application/pdf": ".pdf",
+    "image/gif": ".gif",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "text/csv": ".csv",
+    "text/plain": ".txt"
+  };
+  if (known[mimeType]) return known[mimeType];
+  const extension = path.extname(originalName).toLowerCase();
+  return /^\.[a-z0-9]{1,10}$/.test(extension) ? extension : "";
+}
+
+export function uploadedFileName(
+  job: string,
+  date: string,
+  originalName: string,
+  mimeType: string,
+  kind = "",
+  index = 1
+): string {
+  const extension = safeExtension(originalName, mimeType);
+  const suffix = index > 1 ? `_${index}` : "";
+  return `${safeName(job)}${kind ? `_${safeName(kind)}` : ""}_${date}${suffix}${extension}`;
+}
+
+async function uploadDriveFile(
+  settings: Settings,
+  file: Buffer,
+  fileName: string,
+  mimeType = "application/octet-stream"
+): Promise<string> {
   if (!settings.driveFolderId) throw new Error("Google Drive folder ID is not configured.");
   const token = await driveAccessToken(settings);
   const boundary = `sheethelper_${crypto.randomBytes(12).toString("hex")}`;
@@ -417,7 +520,7 @@ async function uploadDriveImage(settings: Settings, file: Buffer, fileName: stri
   const body = Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`),
     metadata,
-    Buffer.from(`\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`),
+    Buffer.from(`\r\n--${boundary}\r\nContent-Type: ${mimeType.replace(/[\r\n]/g, "")}\r\n\r\n`),
     file,
     Buffer.from(`\r\n--${boundary}--`)
   ]);
@@ -466,29 +569,38 @@ async function readReceipt(settings: Settings, image: Buffer): Promise<string> {
 
 export function parseReceiptText(text: string): { total: string; store: string; lineItems: ReceiptLineItem[] } {
   const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-  const moneyPattern = /[$€£]?\s*(\d{1,6}[.,]\d{2})\b/g;
-  const normalizeMoney = (value: string) => Number(value.replace(",", ".")).toFixed(2);
+  const moneyPattern = /[$€£]?\s*((?:\d{1,3}(?:,\d{3})+|\d{1,7})\.\d{2}|\d{1,6},\d{2})\b/g;
+  const normalizeMoney = (value: string) => {
+    const normalized = value.includes(".") ? value.replace(/,/g, "") : value.replace(",", ".");
+    return Number(normalized).toFixed(2);
+  };
   const moneyValues = (line: string) =>
     [...line.matchAll(moneyPattern)].map((match) => normalizeMoney(match[1]));
-  const totalLabel = /\b(grand\s*total|amount\s*due|balance\s*due|total)\b/i;
-  const excludedTotal = /\b(subtotal|tax\s*total|total\s*tax)\b/i;
   let total = "";
   let totalIndex = -1;
 
-  for (let index = lines.length - 1; index >= 0 && !total; index -= 1) {
-    if (!totalLabel.test(lines[index]) || excludedTotal.test(lines[index])) continue;
-    for (let nearby = index; nearby <= Math.min(lines.length - 1, index + 2); nearby += 1) {
-      const values = moneyValues(lines[nearby]);
-      if (values.length) {
-        total = values.at(-1) || "";
-        totalIndex = nearby;
-        break;
+  const totalLabels = [
+    /\b(grand|order|invoice)\s*total\b/i,
+    /\bamount\s*due\b/i,
+    /^(?:total|total\s+amount)\b/i
+  ];
+  for (const totalLabel of totalLabels) {
+    for (let index = lines.length - 1; index >= 0 && !total; index -= 1) {
+      if (!totalLabel.test(lines[index]) || /\b(subtotal|tax\s*total|total\s*tax|balance\s*due)\b/i.test(lines[index])) continue;
+      for (let nearby = index; nearby <= Math.min(lines.length - 1, index + 2); nearby += 1) {
+        const values = moneyValues(lines[nearby]);
+        if (values.length) {
+          total = values.at(-1) || "";
+          totalIndex = nearby;
+          break;
+        }
       }
     }
+    if (total) break;
   }
   if (!total) {
     for (let index = lines.length - 1; index >= 0; index -= 1) {
-      const currencyMatch = lines[index].match(/[$€£]\s*(\d{1,6}[.,]\d{2})\b/);
+      const currencyMatch = lines[index].match(/[$€£]\s*((?:\d{1,3}(?:,\d{3})+|\d{1,7})\.\d{2}|\d{1,6},\d{2})\b/);
       if (currencyMatch) {
         total = normalizeMoney(currencyMatch[1]);
         totalIndex = index;
@@ -507,17 +619,46 @@ export function parseReceiptText(text: string): { total: string; store: string; 
     }
   }
 
-  const store = /\bhome\s*depot\b/i.test(text)
-    ? "Home Depot"
-    : clean(lines.find((line) => /[a-z]{3}/i.test(line) && !/\d/.test(line)) || "Unknown Store")
+  const knownStores: Array<[RegExp, string]> = [
+    [/\bhome\s*depot\b/i, "Home Depot"],
+    [/\bbuilders?\s*first\s*source\b/i, "Builders FirstSource"],
+    [/\bsunbelt\s*rentals?\b/i, "Sunbelt Rentals"],
+    [/\bparr\s*lumber\b/i, "Parr Lumber"]
+  ];
+  const store = knownStores.find(([pattern]) => pattern.test(text))?.[1]
+    || clean(lines.find((line) => /[a-z]{3}/i.test(line) && !/\d/.test(line)) || "Unknown Store")
       .replace(/\b(the)\b/ig, "")
       .replace(/\s+/g, " ")
       .trim();
   const lineItems: ReceiptLineItem[] = [];
+
+  for (const line of lines) {
+    if (lineItems.length >= 50) break;
+    if (/\b(subtotal|discount|sales tax|balance|deposit|total|payment|amount due)\b/i.test(line)) continue;
+    const leadingQuantity = line.match(/^\s*(\d{1,3})(?:\.00)?\s+(.+)$/);
+    if (!leadingQuantity || !/[a-z]{3}/i.test(leadingQuantity[2])) continue;
+    const remainder = leadingQuantity[2];
+    const prices = moneyValues(remainder);
+    if (!prices.length) continue;
+    const firstPriceMatch = [...remainder.matchAll(moneyPattern)][0];
+    const item = remainder
+      .slice(0, firstPriceMatch?.index ?? remainder.length)
+      .replace(/^\d{5,14}\s+/, "")
+      .replace(/\s+(?:EA|LF|SF|PC|CTN|CARTON)\s*$/i, "")
+      .trim();
+    if (!item || !/[a-z]{3}/i.test(item)) continue;
+    lineItems.push({
+      item,
+      amount: leadingQuantity[1],
+      costPer: prices.length > 1 ? prices.at(-2) || prices[0] : prices[0]
+    });
+  }
+
   const skuIndexes = lines
     .map((line, index) => ({ index, match: line.match(/^\s*(\d{8,14})\s+(.+)$/) }))
     .filter((entry) => entry.match);
-  for (let position = 0; position < skuIndexes.length && lineItems.length < 50; position += 1) {
+  const hasTabularItems = lineItems.length > 0;
+  for (let position = 0; position < skuIndexes.length && !hasTabularItems && lineItems.length < 50; position += 1) {
     const entry = skuIndexes[position];
     const end = skuIndexes[position + 1]?.index ?? lines.findIndex(
       (line, index) => index > entry.index && /\bsubtotal\b/i.test(line)
@@ -692,6 +833,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       locked: mainIsProtected(settings) && !identity,
       pinConfigured: mainIsProtected(settings),
       person: identity?.name || "",
+      role: identity?.role || "",
       ready: Boolean(
         email &&
         key &&
@@ -738,6 +880,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
   }
   const masterOnlyRoutes = new Set([
     "/api/config",
+    "/api/files",
     "/api/google-drive/oauth/start",
     "/api/google-drive/oauth/callback",
     "/api/google-drive/oauth/disconnect"
@@ -891,6 +1034,34 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     sendJson(res, 200, { jobs: await getJobs(settings) });
     return;
   }
+  if (route === "/api/tasks" && req.method === "GET") {
+    const requestUrl = new URL(req.url || route, requestOrigin(req));
+    const job = clean(requestUrl.searchParams.get("job"));
+    if (!job) throw new Error("Choose a job.");
+    await validateJob(settings, job);
+    sendJson(res, 200, {
+      tasks: (await getJobTasks(settings, job)).map(({ id, text }) => ({ id, text }))
+    });
+    return;
+  }
+  if (route === "/api/tasks" && req.method === "POST") {
+    const body = await readJson(req);
+    const job = clean(body.job);
+    const taskId = clean(body.taskId);
+    const input = clean(body.input);
+    const action = clean(body.action);
+    if (!job || !taskId) throw new Error("Choose a job and task.");
+    if (!input) throw new Error("Enter a task update.");
+    if (input.length > 5000) throw new Error("The task update is too long.");
+    if (action !== "finished" && action !== "update") throw new Error("Choose Finished or Update.");
+    await validateJob(settings, job);
+    const task = (await getJobTasks(settings, job)).find((candidate) => candidate.id === taskId);
+    if (!task) throw new Error("That task is no longer listed for this job.");
+    await appendSheetRow(settings, "Tasks", [job, actorName(req), today(), task.text, input]);
+    await colorJobTask(settings, task, action);
+    sendJson(res, 200, { ok: true, task: task.text, action });
+    return;
+  }
   if (route === "/api/reports" && req.method === "POST") {
     const body = await readJson(req);
     const job = clean(body.job);
@@ -903,30 +1074,43 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     return;
   }
   if (route === "/api/photos" && req.method === "POST") {
-    requireJpeg(req);
     const job = header(req, "x-job");
     const index = Math.max(1, Number.parseInt(header(req, "x-photo-index") || "1", 10) || 1);
+    const originalName = header(req, "x-file-name") || `upload_${index}`;
+    const mimeType = clean(String(req.headers["content-type"] || "")) || "application/octet-stream";
     if (!job) throw new Error("Choose a job.");
-    const image = await readBody(req, maxImageBytes);
-    if (!image.length) throw new Error("The image was empty.");
+    const file = await readBody(req, maxFileBytes);
+    if (!file.length) throw new Error("The file was empty.");
     await validateJob(settings, job);
     const date = today();
-    const link = await uploadDriveImage(settings, image, photoFileName(job, date, index));
+    const link = await uploadDriveFile(
+      settings,
+      file,
+      uploadedFileName(job, date, originalName, mimeType, "", index),
+      mimeType
+    );
     await appendSheetRow(settings, "Photos", [job, actorName(req), date, link]);
     sendJson(res, 200, { ok: true, link });
     return;
   }
   if (route === "/api/receipts" && req.method === "POST") {
-    requireJpeg(req);
     const job = header(req, "x-job");
+    const originalName = header(req, "x-file-name") || "receipt";
+    const mimeType = clean(String(req.headers["content-type"] || "")) || "application/octet-stream";
     if (!job) throw new Error("Choose a job.");
-    const image = await readBody(req, maxImageBytes);
-    if (!image.length) throw new Error("The image was empty.");
+    const file = await readBody(req, maxFileBytes);
+    if (!file.length) throw new Error("The file was empty.");
     await validateJob(settings, job);
     const date = today();
+    const canReadReceipt = mimeType.startsWith("image/");
     const [link, receiptText] = await Promise.all([
-      uploadDriveImage(settings, image, receiptFileName(job, date)),
-      readReceipt(settings, image)
+      uploadDriveFile(
+        settings,
+        file,
+        uploadedFileName(job, date, originalName, mimeType, "receipt"),
+        mimeType
+      ),
+      canReadReceipt ? readReceipt(settings, file) : Promise.resolve("")
     ]);
     const parsed = parseReceiptText(receiptText);
     const base = [job, actorName(req), date, link, parsed.total, parsed.store];
@@ -934,7 +1118,37 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
       ? parsed.lineItems.map((item) => [...base, item.item, item.amount, item.costPer])
       : [[...base, "", "", ""]];
     await appendSheetRows(settings, "Receipt", rows);
-    sendJson(res, 200, { ok: true, link, ...parsed });
+    sendJson(res, 200, { ok: true, link, ocrSkipped: !canReadReceipt, ...parsed });
+    return;
+  }
+  if (route === "/api/files" && req.method === "POST") {
+    if (cookieIdentity(req)?.role !== "master") {
+      sendJson(res, 401, { error: "The master access code is required.", locked: true });
+      return;
+    }
+    const job = header(req, "x-job");
+    const type = header(req, "x-file-category");
+    const originalName = header(req, "x-file-name") || "file";
+    const mimeType = clean(String(req.headers["content-type"] || "")) || "application/octet-stream";
+    const allowedTypes = ["Accounting", "Leads", "Other"] as const;
+    if (!job) throw new Error("Choose a job.");
+    if (!allowedTypes.includes(type as typeof allowedTypes[number])) throw new Error("Choose a file type.");
+    const file = await readBody(req, maxFileBytes);
+    if (!file.length) throw new Error("The file was empty.");
+    await validateJob(settings, job);
+    const date = today();
+    const link = await uploadDriveFile(
+      settings,
+      file,
+      uploadedFileName(job, date, originalName, mimeType, type),
+      mimeType
+    );
+    await appendSheetRow(
+      settings,
+      type as "Accounting" | "Leads" | "Other",
+      [job, actorName(req), date, link]
+    );
+    sendJson(res, 200, { ok: true, link, type });
     return;
   }
   sendJson(res, 404, { error: "Not found." });
