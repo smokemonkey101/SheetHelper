@@ -885,31 +885,28 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     return;
   }
   if (route === "/api/config" && req.method === "GET") {
-    const { email, key } = credentials(settings);
+    const oauth = oauthCredentials(settings);
     sendJson(res, 200, {
-      driveFolderId: settings.driveFolderId,
-      driveOAuthConnected: Boolean(oauthCredentials(settings).refreshToken),
-      googleOAuthClientId: oauthCredentials(settings).clientId,
-      googleOAuthClientSecret: "",
+      driveOAuthConnected: Boolean(oauth.refreshToken),
+      driveManagedByRailway: Boolean(clean(process.env.GOOGLE_DRIVE_REFRESH_TOKEN)),
       googleOAuthRedirectUri: oauthRedirectUri(req),
-      hasGoogleOAuthClientSecret: Boolean(oauthCredentials(settings).clientSecret),
-      googlePrivateKey: "",
-      googleServiceAccountEmail: email,
-      hasGooglePrivateKey: Boolean(key),
-      spreadsheetId: settings.spreadsheetId
+      railwayConfiguration: {
+        spreadsheet: Boolean(clean(process.env.GOOGLE_SPREADSHEET_ID)),
+        serviceAccount: Boolean(
+          clean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) && clean(process.env.GOOGLE_PRIVATE_KEY)
+        ),
+        oauthClient: Boolean(
+          clean(process.env.GOOGLE_OAUTH_CLIENT_ID) && clean(process.env.GOOGLE_OAUTH_CLIENT_SECRET)
+        ),
+        driveFolder: Boolean(clean(process.env.GOOGLE_DRIVE_FOLDER_ID))
+      }
     });
-    return;
-  }
-  if (route === "/api/config" && req.method === "POST") {
-    const body = await readJson(req) as Partial<Settings>;
-    saveSettings(body);
-    sendJson(res, 200, { ok: true });
     return;
   }
   if (route === "/api/google-drive/oauth/start" && req.method === "GET") {
     const { clientId, clientSecret } = oauthCredentials(settings);
     if (!clientId || !clientSecret) {
-      throw new Error("Save the Google OAuth client ID and client secret before connecting Drive.");
+      throw new Error("Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in Railway before connecting Drive.");
     }
     const signedState = signedOAuthState();
     const state = signedState.split(".")[0];

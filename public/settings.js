@@ -1,4 +1,3 @@
-const form = document.querySelector("#settingsForm");
 const toast = document.querySelector("#toast");
 let driveConnected = false;
 
@@ -15,39 +14,49 @@ async function request(url, options = {}) {
   return payload;
 }
 
+function setRailwayStatus(name, configured) {
+  const indicator = document.querySelector(`#${name}Indicator`);
+  const status = document.querySelector(`#${name}Status`);
+  const row = indicator.closest(".configuration-status");
+  row.classList.toggle("configured", configured);
+  status.textContent = configured ? "Configured in Railway" : "Missing Railway variable";
+}
+
 async function loadSettings() {
   try {
     const status = await request("/api/settings/status");
     document.querySelector("#settingsLockScreen").hidden = !status.locked;
     if (status.locked) return;
+
     const config = await request("/api/config");
-    for (const [key, value] of Object.entries(config)) {
-      if (form.elements[key] && typeof value === "string") form.elements[key].value = value;
-    }
+    const railway = config.railwayConfiguration || {};
+    setRailwayStatus("spreadsheet", Boolean(railway.spreadsheet));
+    setRailwayStatus("serviceAccount", Boolean(railway.serviceAccount));
+    setRailwayStatus("oauthClient", Boolean(railway.oauthClient));
+    setRailwayStatus("driveFolder", Boolean(railway.driveFolder));
+    document.querySelector("#googleOAuthRedirectUri").value = config.googleOAuthRedirectUri || "";
+
     driveConnected = Boolean(config.driveOAuthConnected);
+    const managedByRailway = Boolean(config.driveManagedByRailway);
     const card = document.querySelector("#driveConnectionCard");
     card.classList.toggle("connected", driveConnected);
     document.querySelector("#driveConnectionTitle").textContent = driveConnected
       ? "Personal Google Drive connected"
       : "Not connected";
-    document.querySelector("#driveConnectionDetail").textContent = driveConnected
-      ? "Uploads are saved in your MHC Tools Uploads folder."
-      : "OAuth creates an MHC Tools Uploads folder in My Drive.";
-    document.querySelector("#connectDrive").textContent = driveConnected
-      ? "Reconnect Google Drive"
-      : "Connect Google Drive";
-    document.querySelector("#disconnectDrive").hidden = !driveConnected;
+    document.querySelector("#driveConnectionDetail").textContent = managedByRailway
+      ? "Drive authorization is managed by a Railway variable."
+      : driveConnected
+        ? "Uploads are saved in your MHC Tools Uploads folder."
+        : "OAuth creates an MHC Tools Uploads folder in My Drive.";
+
+    const connectButton = document.querySelector("#connectDrive");
+    const disconnectButton = document.querySelector("#disconnectDrive");
+    connectButton.hidden = managedByRailway;
+    connectButton.textContent = driveConnected ? "Reconnect Google Drive" : "Connect Google Drive";
+    disconnectButton.hidden = managedByRailway || !driveConnected;
   } catch (error) {
     showToast(error.message, true);
   }
-}
-
-async function saveConfiguration() {
-  await request("/api/config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(Object.fromEntries(new FormData(form)))
-  });
 }
 
 document.querySelector("#settingsUnlockForm").addEventListener("submit", async (event) => {
@@ -73,37 +82,8 @@ document.querySelector("#settingsUnlockForm").addEventListener("submit", async (
   }
 });
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const button = form.querySelector("button[type=submit]");
-  const status = document.querySelector("#saveStatus");
-  button.disabled = true;
-  button.textContent = "Saving…";
-  status.textContent = "";
-  try {
-    await saveConfiguration();
-    status.textContent = "Settings saved";
-    showToast("Settings saved.");
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Save changes";
-  }
-});
-
-document.querySelector("#connectDrive").addEventListener("click", async () => {
-  const button = document.querySelector("#connectDrive");
-  button.disabled = true;
-  button.textContent = "Saving…";
-  try {
-    await saveConfiguration();
-    window.location.assign("/api/google-drive/oauth/start");
-  } catch (error) {
-    showToast(error.message, true);
-    button.disabled = false;
-    button.textContent = driveConnected ? "Reconnect Google Drive" : "Connect Google Drive";
-  }
+document.querySelector("#connectDrive").addEventListener("click", () => {
+  window.location.assign("/api/google-drive/oauth/start");
 });
 
 document.querySelector("#disconnectDrive").addEventListener("click", async () => {

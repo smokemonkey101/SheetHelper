@@ -25,28 +25,20 @@
     <main class="settings-page">
       <div class="settings-title">
         <h1>Settings</h1>
-        <p>Connect MHC Tools to Google Sheets, Vision, and your personal Drive.</p>
+        <p>Google configuration is managed with Railway service variables.</p>
       </div>
 
-      <form id="settingsForm" class="settings-form">
+      <div id="settingsPanel" class="settings-form">
         <section class="settings-section">
           <div class="settings-copy">
-            <h2>Google destination</h2>
-            <p>Choose where job records and uploaded files are saved.</p>
+            <h2>Railway configuration</h2>
+            <p>Values are kept private in Railway and are not displayed here.</p>
           </div>
-          <div class="settings-fields">
-            <label>Spreadsheet URL or ID<input name="spreadsheetId" placeholder="Paste the Google Sheet URL or ID"><small>The app creates all required tabs, including Task Reports and Task ToDo.</small></label>
-          </div>
-        </section>
-
-        <section class="settings-section">
-          <div class="settings-copy">
-            <h2>Service account</h2>
-            <p>Used for Google Sheets and receipt text recognition.</p>
-          </div>
-          <div class="settings-fields">
-            <label>Service account email<input name="googleServiceAccountEmail" type="email" placeholder="name@project.iam.gserviceaccount.com"></label>
-            <label>Service account private key<textarea name="googlePrivateKey" rows="7" placeholder="Leave blank to keep the saved key"></textarea></label>
+          <div class="settings-fields configuration-status-list">
+            <div class="configuration-status"><span id="spreadsheetIndicator" class="connection-indicator"></span><div><strong>Google spreadsheet</strong><small id="spreadsheetStatus">Checking…</small></div></div>
+            <div class="configuration-status"><span id="serviceAccountIndicator" class="connection-indicator"></span><div><strong>Service account and Vision</strong><small id="serviceAccountStatus">Checking…</small></div></div>
+            <div class="configuration-status"><span id="oauthClientIndicator" class="connection-indicator"></span><div><strong>Google OAuth client</strong><small id="oauthClientStatus">Checking…</small></div></div>
+            <div class="configuration-status"><span id="driveFolderIndicator" class="connection-indicator"></span><div><strong>Google Drive folder</strong><small id="driveFolderStatus">Checking…</small></div></div>
           </div>
         </section>
 
@@ -63,8 +55,6 @@
                 <small id="driveConnectionDetail">OAuth creates an MHC Tools Uploads folder in My Drive.</small>
               </div>
             </div>
-            <label>OAuth client ID<input name="googleOAuthClientId" placeholder="Google OAuth web client ID"></label>
-            <label>OAuth client secret<input name="googleOAuthClientSecret" type="password" placeholder="Leave blank to keep the saved secret"></label>
             <label>Authorized redirect URI
               <div class="copy-field">
                 <input id="googleOAuthRedirectUri" name="googleOAuthRedirectUri" readonly>
@@ -110,15 +100,15 @@
                 <li>Open <strong>IAM &amp; Admin → Service Accounts</strong> and create a service account.</li>
                 <li>Open it, then choose <strong>Keys → Add key → Create new key → JSON</strong>.</li>
                 <li>Keep the downloaded JSON file private. Never upload it to GitHub.</li>
-                <li>Copy <code>client_email</code> into the service account email field above.</li>
-                <li>Copy the complete <code>private_key</code> into the private key field above.</li>
+                <li>Set <code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code> in Railway to the JSON file's <code>client_email</code>.</li>
+                <li>Set <code>GOOGLE_PRIVATE_KEY</code> in Railway to the complete JSON <code>private_key</code>, including the BEGIN and END lines.</li>
               </ol>
 
               <h3>3. Connect Google Sheets</h3>
               <ol>
                 <li>Create a Google Sheet and share it with the service account as an <strong>Editor</strong>.</li>
-                <li>Copy the ID from the Google Sheet URL into the Spreadsheet ID field.</li>
-                <li>Save settings. MHC Tools will create the required sheet tabs automatically.</li>
+                <li>Copy the ID from the Google Sheet URL into Railway as <code>GOOGLE_SPREADSHEET_ID</code>.</li>
+                <li>Deploy the Railway service. MHC Tools will create the required sheet tabs automatically.</li>
                 <li>Add job names to the <strong>Jobs</strong> tab in column A, starting at cell A2.</li>
                 <li>Add worker names in column E and their four-digit codes in column F, starting at row 2.</li>
                 <li>Add work to the <strong>Task ToDo</strong> tab using: Job, Date Assigned, Assigned To, Status, Task.</li>
@@ -129,13 +119,13 @@
                 <li>Open <strong>APIs &amp; Services → OAuth consent screen</strong>, configure the app, and add your Google account as a test user if the app is in testing.</li>
                 <li>Open <strong>APIs &amp; Services → Credentials</strong> and create an <strong>OAuth client ID</strong> with application type <strong>Web application</strong>.</li>
                 <li>Copy the authorized redirect URI shown above into the OAuth client's <strong>Authorized redirect URIs</strong>.</li>
-                <li>Copy the client ID and client secret into the fields above, then save settings.</li>
+                <li>Set the client ID and client secret in Railway as <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code>.</li>
                 <li>Select <strong>Connect Google Drive</strong>, sign in, and approve access. MHC Tools creates its own uploads folder in My Drive.</li>
               </ol>
 
               <h3>5. Configure Railway</h3>
               <ol>
-                <li>Add these variables to the Railway service. Environment variables override values saved on this page:</li>
+                <li>Add these variables to the Railway service. The Settings page only reports whether they are present; it never displays their values:</li>
               </ol>
               <ul>
                 <li><code>GOOGLE_SPREADSHEET_ID</code></li>
@@ -152,7 +142,6 @@
                 <li><code>APP_TIMEZONE</code> (for example, <code>America/Los_Angeles</code>)</li>
               </ul>
               <ol start="2">
-                <li>If any settings are saved in the site instead, attach a persistent Railway volume at <code>/data</code> and set <code>SETTINGS_FILE_PATH=/data/app-settings.json</code>.</li>
                 <li>Add worker names and four-digit codes to the Jobs tab in columns E and F, starting on row 2.</li>
                 <li>Deploy and test the connection.</li>
               </ol>
@@ -167,12 +156,8 @@
           </details>
         </section>
 
-        <div class="settings-actions">
-          <span id="saveStatus" role="status"></span>
-          <a class="secondary-button" href="/">Cancel</a>
-          <button class="primary" type="submit">Save changes</button>
-        </div>
-      </form>
+        <div class="settings-actions"><a class="secondary-button" href="/">Back to workspace</a></div>
+      </div>
     </main>
   </div>
   <div id="settingsLockScreen" class="lock-screen" hidden>
