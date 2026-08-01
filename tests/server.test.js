@@ -2,18 +2,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   driveFolderIdFrom,
-  jobTasksFromRows,
+  taskToDosFromRows,
   parseReceiptText,
   photoFileName,
   receiptFileName,
   sheetDefinitions,
   spreadsheetIdFrom,
-  uploadedFileName
+  uploadedFileName,
+  usersFromJobRows
 } = require("../dist/server.js");
 
-test("receipt parser finds the final total and purchased items", () => {
+test("receipt parser finds total, store, and purchase date", () => {
   const parsed = parseReceiptText(`
     HARDWARE STORE
+    Receipt Date 7/30/2026
     Hammer 12.99
     Box of nails 4.50
     Subtotal 17.49
@@ -21,16 +23,13 @@ test("receipt parser finds the final total and purchased items", () => {
     TOTAL $18.93
     VISA 18.93
   `);
-  assert.equal(parsed.total, "18.93");
-  assert.deepEqual(parsed.lineItems, [
-    { item: "Hammer", amount: "1", costPer: "12.99" },
-    { item: "Box of nails", amount: "1", costPer: "4.50" }
-  ]);
+  assert.deepEqual(parsed, { total: "18.93", store: "HARDWARE STORE", purchaseDate: "2026-07-30" });
 });
 
-test("receipt parser handles split totals and quantity-at-unit-price items", () => {
+test("receipt parser handles split totals", () => {
   const parsed = parseReceiptText(`
     THE HOME DEPOT
+    10/11/23 02:14 PM
     066785314502 HDX TOTE <A>
     27 GAL TOUGH STORAGE TOTE BLK/YLW
     2018.47
@@ -48,16 +47,14 @@ test("receipt parser handles split totals and quantity-at-unit-price items", () 
   `);
   assert.equal(parsed.total, "64.15");
   assert.equal(parsed.store, "Home Depot");
-  assert.deepEqual(parsed.lineItems, [
-    { item: "HDX TOTE <A>", amount: "2", costPer: "18.47" },
-    { item: "PAINT BRSH <A>", amount: "3", costPer: "7.35" }
-  ]);
+  assert.equal(parsed.purchaseDate, "2023-10-11");
 });
 
-test("invoice parser prefers order total over zero balance and reads table rows", () => {
+test("invoice parser prefers order total over zero balance", () => {
   const parsed = parseReceiptText(`
     Customer Receipt
     THE HOME DEPOT
+    5/26/2026, 3:05 PM PDT
     Item Description Unit Price Qty Subtotal
     3 American Standard Reliant Toilet 119.00 each 357.00
     1 Delta Classic Bathtub 339.00 each 339.00
@@ -69,35 +66,30 @@ test("invoice parser prefers order total over zero balance and reads table rows"
   `);
   assert.equal(parsed.store, "Home Depot");
   assert.equal(parsed.total, "5731.86");
-  assert.deepEqual(parsed.lineItems, [
-    { item: "American Standard Reliant Toilet", amount: "3", costPer: "119.00" },
-    { item: "Delta Classic Bathtub", amount: "1", costPer: "339.00" }
-  ]);
+  assert.equal(parsed.purchaseDate, "2026-05-26");
 });
 
-test("invoice parser recognizes construction suppliers and sales-order rows", () => {
+test("invoice parser recognizes suppliers and labeled dates", () => {
   const builders = parseReceiptText(`
     Builders FirstSource
+    DATE 04-17-26
     QTY ITEM NO. DESCRIPTION U/M UNIT PRICE EXTENDED PRICE
     20 51214DF18GL 5-1/2X14 GLAM LF 27.50 550.00
     SUBTOTAL 550.00 TAX .00 TOTAL 550.00
   `);
   assert.equal(builders.store, "Builders FirstSource");
   assert.equal(builders.total, "550.00");
-  assert.deepEqual(builders.lineItems, [
-    { item: "51214DF18GL 5-1/2X14 GLAM", amount: "20", costPer: "27.50" }
-  ]);
+  assert.equal(builders.purchaseDate, "2026-04-17");
 
   const parr = parseReceiptText(`
     PARR Lumber
+    INVOICE DATE 04/27/2026
     ORDERED DESCRIPTION PRICE AMOUNT
     1 4812CD 4x8 15/32 4-Ply Cdx Plywood 26.16 ea 26.16
     TOTAL $26.16
   `);
   assert.equal(parr.store, "Parr Lumber");
-  assert.deepEqual(parr.lineItems, [
-    { item: "4812CD 4x8 15/32 4-Ply Cdx Plywood", amount: "1", costPer: "26.16" }
-  ]);
+  assert.equal(parr.purchaseDate, "2026-04-27");
 });
 
 test("upload names are safe and predictable", () => {
@@ -111,11 +103,12 @@ test("workbook tabs and columns match the application contract", () => {
     Jobs: ["Job"],
     Photos: ["Job", "Person", "Date", "Photo"],
     Reports: ["Job", "Person", "Date", "Report"],
-    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Line Item", "Amount", "Cost Per"],
-    Tasks: ["Job", "Person", "Date", "Task", "Input"],
-    Accounting: ["Job", "Person", "Date", "File"],
-    Leads: ["Job", "Person", "Date", "File"],
-    Other: ["Job", "Person", "Date", "File"]
+    Receipt: ["Job", "Person", "Date", "Photo", "Total", "Store", "Purchase Date"],
+    "Task Reports": ["Job", "Person", "Date", "Task", "Input"],
+    "Task ToDo": ["Job", "Date Assigned", "Assigned To", "Status", "Task"],
+    Accounting: ["Job", "Person", "Date", "File", "Tag"],
+    Leads: ["Job", "Person", "Date", "File", "Tag"],
+    Other: ["Job", "Person", "Date", "File", "Tag"]
   });
 });
 
@@ -126,17 +119,36 @@ test("uploaded files keep safe extensions and category names", () => {
   );
 });
 
-test("tasks come from the selected Jobs row and preserve their sheet cells", () => {
+test("unfinished tasks come from Task ToDo and preserve their rows", () => {
   assert.deepEqual(
-    jobTasksFromRows([
-      ["Test", "Order lumber", "", "Schedule inspection"],
-      ["Other job", "Unrelated task"]
+    taskToDosFromRows([
+      ["Test", "2026-08-01", "Allan", "", "Order lumber"],
+      ["Test", "2026-08-01", "Allan", "Finished", "Schedule inspection"],
+      ["Other job", "2026-08-01", "Diana", "", "Unrelated task"]
     ], "Test"),
     [
-      { id: "1:1", text: "Order lumber", rowIndex: 1, columnIndex: 1 },
-      { id: "1:3", text: "Schedule inspection", rowIndex: 1, columnIndex: 3 }
+      {
+        id: "1",
+        job: "Test",
+        dateAssigned: "2026-08-01",
+        assignedTo: "Allan",
+        status: "",
+        text: "Order lumber",
+        rowIndex: 1
+      }
     ]
   );
+});
+
+test("worker codes come from Jobs columns E and F", () => {
+  assert.deepEqual(usersFromJobRows([
+    ["Allan", "1234"],
+    ["Missing pin", ""],
+    ["Diana", "5678"]
+  ]), [
+    { name: "Allan", pin: "1234" },
+    { name: "Diana", pin: "5678" }
+  ]);
 });
 
 test("Google URLs are normalized to resource IDs", () => {

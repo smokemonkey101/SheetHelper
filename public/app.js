@@ -67,7 +67,7 @@ async function loadTasks() {
   select.innerHTML = '<option value="">Loading tasks…</option>';
   try {
     const { tasks } = await request(`/api/tasks?job=${encodeURIComponent(job)}`);
-    const options = ['<option value="">Choose a task</option>', ...tasks.map((task) => {
+    const options = ['<option value="">No specific task</option>', ...tasks.map((task) => {
       const option = document.createElement("option");
       option.value = task.id;
       option.textContent = task.text;
@@ -75,7 +75,7 @@ async function loadTasks() {
     })].join("");
     select.innerHTML = options;
     select.disabled = false;
-    if (!tasks.length) showToast(`No tasks are listed to the right of ${job}.`, true);
+    if (!tasks.length) showToast(`No tasks are listed for ${job}. You can still submit a Task Report.`);
   } catch (error) {
     select.innerHTML = '<option value="">Tasks unavailable</option>';
     showToast(error.message, true);
@@ -121,10 +121,6 @@ $("#masterFiles").addEventListener("change", (event) => {
   $("#masterFileLabel").textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Any file type, up to 20 MB each";
 });
 
-$("#reportForm textarea").addEventListener("input", (event) => {
-  $("#reportCount").textContent = event.target.value.length.toLocaleString();
-});
-
 $("#taskJob").addEventListener("change", loadTasks);
 
 $("#photoForm").addEventListener("submit", async (event) => {
@@ -152,27 +148,6 @@ $("#photoForm").addEventListener("submit", async (event) => {
     form.reset();
     $("#photoFileLabel").textContent = "Images, PDFs, and other files";
     showToast(`${files.length} file${files.length === 1 ? "" : "s"} added to ${job}.`);
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    setBusy(form, false);
-  }
-});
-
-$("#reportForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const data = Object.fromEntries(new FormData(form));
-  setBusy(form, true, "Saving report…");
-  try {
-    await request("/api/reports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    form.reset();
-    $("#reportCount").textContent = "0";
-    showToast(`Report saved for ${data.job}.`);
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -216,6 +191,7 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
   const data = new FormData(form);
   const job = data.get("job");
   const type = data.get("type");
+  const tag = data.get("tag");
   const files = [...$("#masterFiles").files];
   if (!files.length) return showToast("Choose at least one file.", true);
   setBusy(form, true, `Uploading 1 of ${files.length}…`);
@@ -229,7 +205,8 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
           "Content-Type": file.type || "application/octet-stream",
           "X-Job": encodeURIComponent(job),
           "X-File-Category": encodeURIComponent(type),
-          "X-File-Name": encodeURIComponent(file.name)
+          "X-File-Name": encodeURIComponent(file.name),
+          "X-File-Tag": encodeURIComponent(tag)
         },
         body: file
       });
@@ -261,7 +238,8 @@ $("#taskForm").addEventListener("submit", async (event) => {
       body: JSON.stringify(data)
     });
     form.elements.input.value = "";
-    showToast(`${result.task} marked ${result.action === "finished" ? "finished" : "updated"}.`);
+    const subject = result.task || "Task report";
+    showToast(`${subject} marked ${result.action === "finished" ? "finished" : "updated"}.`);
     await loadTasks();
   } catch (error) {
     showToast(error.message, true);

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <title>SheetHelper</title>
+  <title>MHC Tools</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -13,9 +13,9 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="SheetHelper home">
-        <span class="brand-mark"><span>S</span></span>
-        <span>SheetHelper</span>
+      <a class="brand" href="/" aria-label="MHC Tools home">
+        <span class="brand-mark"><span>M</span></span>
+        <span>MHC Tools</span>
       </a>
       <div class="top-actions">
         <span id="connectionStatus" class="status"><i></i> Connecting</span>
@@ -32,7 +32,7 @@
       <section class="hero">
         <div>
           <h1>Job updates</h1>
-          <p>Send photos, field notes, and receipts straight to the right job record.</p>
+          <p>Send photos, task reports, receipts, and files straight to the right job record.</p>
         </div>
         <button id="refreshJobsText" class="text-button" type="button">Refresh job list</button>
       </section>
@@ -54,18 +54,6 @@
           </form>
         </article>
 
-        <article class="action-card report-card">
-          <div class="card-icon green"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.89 2 2 2h12a2 2 0 0 0 2-2V8zm1 15H7v-2h8zm2-4H7v-2h10zm-4-4V3.5L18.5 9z"/></svg></div>
-          <h2>Field report</h2>
-          <p>Record a short update, note, or job summary.</p>
-          <form id="reportForm">
-            <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
-            <label>Report<textarea name="report" rows="7" maxlength="10000" placeholder="What happened on this job today?" required></textarea></label>
-            <div class="character-count"><span id="reportCount">0</span> / 10,000</div>
-            <button class="primary" type="submit">Save report</button>
-          </form>
-        </article>
-
         <article class="action-card receipt-card">
           <div class="card-icon yellow"><svg viewBox="0 0 24 24"><path d="M18 17H6v-2h12zm0-4H6v-2h12zm0-4H6V7h12zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2z"/></svg></div>
           <h2>Receipt upload</h2>
@@ -84,12 +72,12 @@
 
         <article class="action-card task-card">
           <div class="card-icon purple"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-8 14-5-5 1.41-1.41L11 14.17l5.59-5.59L18 10z"/></svg></div>
-          <h2>Task update</h2>
-          <p>Select a job task, add a note, then mark it updated or finished.</p>
+          <h2>Task Report</h2>
+          <p>Select a task if applicable, add your report, then mark it updated or finished.</p>
           <form id="taskForm">
             <label>Target job<select id="taskJob" class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
-            <label>Task<select id="taskSelect" name="taskId" required disabled><option value="">Choose a job first</option></select></label>
-            <label>Update<textarea name="input" rows="5" maxlength="5000" placeholder="What changed or was completed?" required></textarea></label>
+            <label>Task (optional)<select id="taskSelect" name="taskId" disabled><option value="">Choose a job first</option></select></label>
+            <label>Report<textarea name="input" rows="5" maxlength="5000" placeholder="What changed or was completed?" required></textarea></label>
             <div class="task-actions">
               <button class="task-update-button" type="submit" name="action" value="update">Update</button>
               <button class="task-finished-button" type="submit" name="action" value="finished">Finished</button>
@@ -104,6 +92,7 @@
           <form id="masterFileForm">
             <label>Target job<select class="job-select" name="job" required><option value="">Loading jobs…</option></select></label>
             <label>Type<select name="type" required><option value="">Choose a type</option><option>Accounting</option><option>Leads</option><option>Other</option></select></label>
+            <label>Tag<input name="tag" maxlength="200" placeholder="Short label or note"></label>
             <label class="dropzone" for="masterFiles">
               <input id="masterFiles" type="file" multiple required>
               <span class="upload-symbol">＋</span>
@@ -116,12 +105,12 @@
       </section>
     </main>
 
-    <footer><span>SheetHelper</span><span>Google Sheets + Drive</span></footer>
+    <footer><span>MHC Tools</span><span>Google Sheets + Drive</span></footer>
   </div>
 
   <div id="lockScreen" class="lock-screen" hidden>
     <form id="unlockForm" class="unlock-card">
-      <span class="brand-mark">S</span>
+      <span class="brand-mark">M</span>
       <p class="eyebrow">PRIVATE WORKSPACE</p>
       <h2>Welcome back</h2>
       <p>Enter your 4-digit code to continue.</p>

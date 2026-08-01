@@ -31,8 +31,8 @@ async function loadSettings() {
       ? "Personal Google Drive connected"
       : "Not connected";
     document.querySelector("#driveConnectionDetail").textContent = driveConnected
-      ? "Uploads are saved in your SheetHelper Uploads folder."
-      : "OAuth creates a SheetHelper Uploads folder in My Drive.";
+      ? "Uploads are saved in your MHC Tools Uploads folder."
+      : "OAuth creates an MHC Tools Uploads folder in My Drive.";
     document.querySelector("#connectDrive").textContent = driveConnected
       ? "Reconnect Google Drive"
       : "Connect Google Drive";

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <title>Settings · SheetHelper</title>
+  <title>Settings · MHC Tools</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -13,8 +13,8 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="SheetHelper home">
-        <span class="brand-mark"><span>S</span></span><span>SheetHelper</span>
+      <a class="brand" href="/" aria-label="MHC Tools home">
+        <span class="brand-mark"><span>M</span></span><span>MHC Tools</span>
       </a>
       <a class="back-link" href="/">
         <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.42-1.41L7.83 13H20z"/></svg>
@@ -25,7 +25,7 @@
     <main class="settings-page">
       <div class="settings-title">
         <h1>Settings</h1>
-        <p>Connect SheetHelper to Google Sheets, Vision, and your personal Drive.</p>
+        <p>Connect MHC Tools to Google Sheets, Vision, and your personal Drive.</p>
       </div>
 
       <form id="settingsForm" class="settings-form">
@@ -35,7 +35,7 @@
             <p>Choose where job records and uploaded files are saved.</p>
           </div>
           <div class="settings-fields">
-            <label>Spreadsheet URL or ID<input name="spreadsheetId" placeholder="Paste the Google Sheet URL or ID"><small>The app creates the Jobs, Photos, Reports, and Receipt tabs.</small></label>
+            <label>Spreadsheet URL or ID<input name="spreadsheetId" placeholder="Paste the Google Sheet URL or ID"><small>The app creates all required tabs, including Task Reports and Task ToDo.</small></label>
           </div>
         </section>
 
@@ -60,7 +60,7 @@
               <span class="connection-indicator"></span>
               <div>
                 <strong id="driveConnectionTitle">Not connected</strong>
-                <small id="driveConnectionDetail">OAuth creates a SheetHelper Uploads folder in My Drive.</small>
+                <small id="driveConnectionDetail">OAuth creates an MHC Tools Uploads folder in My Drive.</small>
               </div>
             </div>
             <label>OAuth client ID<input name="googleOAuthClientId" placeholder="Google OAuth web client ID"></label>
@@ -79,31 +79,6 @@
           </div>
         </section>
 
-        <section class="settings-section">
-          <div class="settings-copy">
-            <h2>Workspace access</h2>
-            <p>Add up to three people. Their codes unlock the workspace only; the Railway master code also unlocks Settings.</p>
-          </div>
-          <div class="settings-fields access-people">
-            <div class="access-person">
-              <strong>Person 1</strong>
-              <label>Name<input name="user1Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
-              <label>4-digit code<input name="user1Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
-            </div>
-            <div class="access-person">
-              <strong>Person 2</strong>
-              <label>Name<input name="user2Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
-              <label>4-digit code<input name="user2Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
-            </div>
-            <div class="access-person">
-              <strong>Person 3</strong>
-              <label>Name<input name="user3Name" maxlength="80" autocomplete="off" placeholder="Name"></label>
-              <label>4-digit code<input name="user3Pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" placeholder="4 digits"></label>
-            </div>
-            <small>Leave both fields blank to remove a person.</small>
-          </div>
-        </section>
-
         <section class="setup-guide">
           <details>
             <summary>
@@ -111,7 +86,7 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18h2v-2h-2zm1-16A10 10 0 1 0 12 22 10 10 0 0 0 12 2m0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16m0-14a4 4 0 0 0-4 4h2a2 2 0 1 1 2.83 1.82c-1.23.5-1.83 1.22-1.83 2.68V15h2v-.5c0-.77.18-1.01.83-1.28A4 4 0 0 0 12 6"/></svg>
               </span>
               <span>
-                <strong>How to set up SheetHelper</strong>
+                <strong>How to set up MHC Tools</strong>
                 <small>Google Cloud, Sheets, Drive, and Railway instructions</small>
               </span>
               <svg class="expand-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7.41 8.59 4.59 4.58 4.59-4.58L18 10l-6 6-6-6z"/></svg>
@@ -143,8 +118,10 @@
               <ol>
                 <li>Create a Google Sheet and share it with the service account as an <strong>Editor</strong>.</li>
                 <li>Copy the ID from the Google Sheet URL into the Spreadsheet ID field.</li>
-                <li>Save settings. SheetHelper will create the required sheet tabs automatically.</li>
+                <li>Save settings. MHC Tools will create the required sheet tabs automatically.</li>
                 <li>Add job names to the <strong>Jobs</strong> tab in column A, starting at cell A2.</li>
+                <li>Add worker names in column E and their four-digit codes in column F, starting at row 2.</li>
+                <li>Add work to the <strong>Task ToDo</strong> tab using: Job, Date Assigned, Assigned To, Status, Task.</li>
               </ol>
 
               <h3>4. Connect personal Google Drive</h3>
@@ -153,16 +130,31 @@
                 <li>Open <strong>APIs &amp; Services → Credentials</strong> and create an <strong>OAuth client ID</strong> with application type <strong>Web application</strong>.</li>
                 <li>Copy the authorized redirect URI shown above into the OAuth client's <strong>Authorized redirect URIs</strong>.</li>
                 <li>Copy the client ID and client secret into the fields above, then save settings.</li>
-                <li>Select <strong>Connect Google Drive</strong>, sign in, and approve access. SheetHelper creates its own uploads folder in My Drive.</li>
+                <li>Select <strong>Connect Google Drive</strong>, sign in, and approve access. MHC Tools creates its own uploads folder in My Drive.</li>
               </ol>
 
               <h3>5. Configure Railway</h3>
               <ol>
-                <li>Add a persistent Railway volume mounted at <code>/data</code>.</li>
-                <li>Set <code>SETTINGS_FILE_PATH=/data/app-settings.json</code>.</li>
-                <li>Set <code>SITE_MASTER_PIN</code> to your four-digit master code.</li>
-                <li>Set <code>SITE_UNLOCK_SECRET</code> to a long random value.</li>
-                <li>Deploy, generate a public domain, open this page, and save the Google connection.</li>
+                <li>Add these variables to the Railway service. Environment variables override values saved on this page:</li>
+              </ol>
+              <ul>
+                <li><code>GOOGLE_SPREADSHEET_ID</code></li>
+                <li><code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code></li>
+                <li><code>GOOGLE_PRIVATE_KEY</code></li>
+                <li><code>GOOGLE_OAUTH_CLIENT_ID</code></li>
+                <li><code>GOOGLE_OAUTH_CLIENT_SECRET</code></li>
+                <li><code>GOOGLE_DRIVE_REFRESH_TOKEN</code></li>
+                <li><code>GOOGLE_DRIVE_FOLDER_ID</code></li>
+                <li><code>PUBLIC_URL</code> (for example, <code>https://work.mhc211757.com</code>)</li>
+                <li><code>GOOGLE_OAUTH_REDIRECT_URI</code> (optional exact callback override)</li>
+                <li><code>SITE_MASTER_PIN</code></li>
+                <li><code>SITE_UNLOCK_SECRET</code></li>
+                <li><code>APP_TIMEZONE</code> (for example, <code>America/Los_Angeles</code>)</li>
+              </ul>
+              <ol start="2">
+                <li>If any settings are saved in the site instead, attach a persistent Railway volume at <code>/data</code> and set <code>SETTINGS_FILE_PATH=/data/app-settings.json</code>.</li>
+                <li>Add worker names and four-digit codes to the Jobs tab in columns E and F, starting on row 2.</li>
+                <li>Deploy and test the connection.</li>
               </ol>
 
               <h3>6. Test the connection</h3>
@@ -185,7 +177,7 @@
   </div>
   <div id="settingsLockScreen" class="lock-screen" hidden>
     <form id="settingsUnlockForm" class="unlock-card">
-      <span class="brand-mark"><span>S</span></span>
+      <span class="brand-mark"><span>M</span></span>
       <p class="eyebrow">ADMIN SETTINGS</p>
       <h2>Master code required</h2>
       <p>Enter the 4-digit master code from the server environment.</p>
