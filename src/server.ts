@@ -1067,7 +1067,9 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, route: s
     if (!file.length) throw new Error("The file was empty.");
     await validateJob(settings, job);
     const date = today();
-    const canReadReceipt = mimeType.startsWith("image/");
+    const canReadReceipt = new Set([
+      "image/gif", "image/jpeg", "image/png", "image/webp"
+    ]).has(mimeType.split(";")[0].toLowerCase());
     const [link, receiptText] = await Promise.all([
       uploadDriveFile(
         settings,
@@ -1127,21 +1129,6 @@ const mimeTypes: Record<string, string> = {
 };
 
 function serveStatic(route: string, res: http.ServerResponse): void {
-  if (route === "/vendor/heic2any.js") {
-    const vendorFile = path.join(rootDir, "node_modules", "heic2any", "dist", "heic2any.min.js");
-    fs.readFile(vendorFile, (error, contents) => {
-      if (error) {
-        sendJson(res, 404, { error: "HEIC converter is unavailable." });
-        return;
-      }
-      res.writeHead(200, {
-        "Content-Type": "text/javascript; charset=utf-8",
-        "Cache-Control": "public, max-age=86400"
-      });
-      res.end(contents);
-    });
-    return;
-  }
   const requested = route === "/"
     ? "index.html"
     : route === "/settings"

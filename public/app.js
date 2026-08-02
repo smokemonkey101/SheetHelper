@@ -82,61 +82,6 @@ async function loadTasks() {
   }
 }
 
-async function imageToJpeg(file) {
-  if (file.type === "image/jpeg" && file.size <= 15 * 1024 * 1024) return file;
-  let bitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    return file;
-  }
-  const maxDimension = 2400;
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return new Promise((resolve, reject) => canvas.toBlob(
-    (blob) => blob ? resolve(blob) : reject(new Error("Could not prepare that image.")),
-    "image/jpeg",
-    .88
-  ));
-}
-
-async function isHeic(file) {
-  if (/image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return true;
-  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  const signature = String.fromCharCode(...header);
-  return /ftyp(?:heic|heix|hevc|hevx|mif1|msf1)/i.test(signature);
-}
-
-async function heicToJpeg(file) {
-  if (typeof globalThis.heic2any !== "function") {
-    throw new Error("The iPhone photo converter did not load. Refresh the page and try again.");
-  }
-  try {
-    const result = await globalThis.heic2any({ blob: file, toType: "image/jpeg", quality: .9 });
-    const jpeg = Array.isArray(result) ? result[0] : result;
-    if (!jpeg) throw new Error("No image was produced.");
-    return new File([jpeg], file.name.replace(/\.hei[cf]$/i, "") + ".jpg", {
-      type: "image/jpeg",
-      lastModified: file.lastModified
-    });
-  } catch {
-    throw new Error("That iPhone photo could not be converted. Try taking a screenshot of it and upload the screenshot.");
-  }
-}
-
-async function prepareUpload(file) {
-  if (await isHeic(file)) return heicToJpeg(file);
-  if (!file.type.startsWith("image/")) return file;
-  return imageToJpeg(file);
-}
-
 $("#photoFiles").addEventListener("change", (event) => {
   const files = [...event.target.files];
   $("#photoFileLabel").textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Images, PDFs, and other files";
@@ -159,24 +104,22 @@ $("#photoForm").addEventListener("submit", async (event) => {
   const job = new FormData(form).get("job");
   const files = [...$("#photoFiles").files];
   if (!files.length) return showToast("Choose at least one file.", true);
-  setBusy(form, true, `Preparing 1 of ${files.length}…`);
+  setBusy(form, true, `Uploading 1 of ${files.length}…`);
   let uploadedCount = 0;
   const failures = [];
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     try {
-      $("button[type=submit]", form).textContent = `Preparing ${index + 1} of ${files.length}…`;
-      const upload = await prepareUpload(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/photos", {
         method: "POST",
         headers: {
-          "Content-Type": upload.type || "application/octet-stream",
+          "Content-Type": file.type || "application/octet-stream",
           "X-Job": encodeURIComponent(job),
           "X-Photo-Index": String(index + 1),
           "X-File-Name": encodeURIComponent(file.name)
         },
-        body: upload
+        body: file
       });
       uploadedCount += 1;
     } catch (error) {
@@ -208,20 +151,19 @@ $("#receiptForm").addEventListener("submit", async (event) => {
   if (!file) return showToast("Choose one receipt photo.", true);
   setBusy(form, true, "Reading receipt…");
   try {
-    const upload = await prepareUpload(file);
     const result = await request("/api/receipts", {
       method: "POST",
       headers: {
-        "Content-Type": upload.type || "application/octet-stream",
+        "Content-Type": file.type || "application/octet-stream",
         "X-Job": encodeURIComponent(job),
         "X-File-Name": encodeURIComponent(file.name)
       },
-      body: upload
+      body: file
     });
     form.reset();
     $("#receiptFileLabel").textContent = "Make sure the total is clearly visible";
     showToast(result.ocrSkipped
-      ? `Receipt file added to ${job}. Automatic reading currently works with images only.`
+      ? `Receipt file added to ${job}. Automatic reading requires a JPG, PNG, GIF, or WebP image.`
       : `Receipt added to ${job}${result.total ? ` — total $${result.total}` : ""}.`);
   } catch (error) {
     showToast(error.message, true);
@@ -243,18 +185,17 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
   try {
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
-      const upload = await prepareUpload(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/files", {
         method: "POST",
         headers: {
-          "Content-Type": upload.type || "application/octet-stream",
+          "Content-Type": file.type || "application/octet-stream",
           "X-Job": encodeURIComponent(job),
           "X-File-Category": encodeURIComponent(type),
           "X-File-Name": encodeURIComponent(file.name),
           "X-File-Tag": encodeURIComponent(tag)
         },
-        body: upload
+        body: file
       });
     }
     form.reset();
