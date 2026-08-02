@@ -84,7 +84,12 @@ async function loadTasks() {
 
 async function imageToJpeg(file) {
   if (file.type === "image/jpeg" && file.size <= 15 * 1024 * 1024) return file;
-  const bitmap = await createImageBitmap(file);
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file;
+  }
   const maxDimension = 2400;
   const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
@@ -102,7 +107,32 @@ async function imageToJpeg(file) {
   ));
 }
 
+async function isHeic(file) {
+  if (/image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return true;
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const signature = String.fromCharCode(...header);
+  return /ftyp(?:heic|heix|hevc|hevx|mif1|msf1)/i.test(signature);
+}
+
+async function heicToJpeg(file) {
+  if (typeof globalThis.heic2any !== "function") {
+    throw new Error("The iPhone photo converter did not load. Refresh the page and try again.");
+  }
+  try {
+    const result = await globalThis.heic2any({ blob: file, toType: "image/jpeg", quality: .9 });
+    const jpeg = Array.isArray(result) ? result[0] : result;
+    if (!jpeg) throw new Error("No image was produced.");
+    return new File([jpeg], file.name.replace(/\.hei[cf]$/i, "") + ".jpg", {
+      type: "image/jpeg",
+      lastModified: file.lastModified
+    });
+  } catch {
+    throw new Error("That iPhone photo could not be converted. Try taking a screenshot of it and upload the screenshot.");
+  }
+}
+
 async function prepareUpload(file) {
+  if (await isHeic(file)) return heicToJpeg(file);
   if (!file.type.startsWith("image/")) return file;
   return imageToJpeg(file);
 }
@@ -130,9 +160,13 @@ $("#photoForm").addEventListener("submit", async (event) => {
   const files = [...$("#photoFiles").files];
   if (!files.length) return showToast("Choose at least one file.", true);
   setBusy(form, true, `Preparing 1 of ${files.length}…`);
-  try {
-    for (let index = 0; index < files.length; index += 1) {
-      const upload = await prepareUpload(files[index]);
+  let uploadedCount = 0;
+  const failures = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    try {
+      $("button[type=submit]", form).textContent = `Preparing ${index + 1} of ${files.length}…`;
+      const upload = await prepareUpload(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/photos", {
         method: "POST",
@@ -140,19 +174,30 @@ $("#photoForm").addEventListener("submit", async (event) => {
           "Content-Type": upload.type || "application/octet-stream",
           "X-Job": encodeURIComponent(job),
           "X-Photo-Index": String(index + 1),
-          "X-File-Name": encodeURIComponent(files[index].name)
+          "X-File-Name": encodeURIComponent(file.name)
         },
         body: upload
       });
+      uploadedCount += 1;
+    } catch (error) {
+      failures.push({ name: file.name, message: error.message });
     }
+  }
+  if (uploadedCount) {
     form.reset();
     $("#photoFileLabel").textContent = "Images, PDFs, and other files";
-    showToast(`${files.length} file${files.length === 1 ? "" : "s"} added to ${job}.`);
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    setBusy(form, false);
   }
+  if (failures.length) {
+    const firstFailure = failures[0];
+    showToast(
+      `${uploadedCount} of ${files.length} files uploaded. ${failures.length} failed. ` +
+      `${firstFailure.name}: ${firstFailure.message}`,
+      true
+    );
+  } else {
+    showToast(`${uploadedCount} file${uploadedCount === 1 ? "" : "s"} added to ${job}.`);
+  }
+  setBusy(form, false);
 });
 
 $("#receiptForm").addEventListener("submit", async (event) => {
@@ -198,17 +243,18 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
   try {
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
+      const upload = await prepareUpload(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/files", {
         method: "POST",
         headers: {
-          "Content-Type": file.type || "application/octet-stream",
+          "Content-Type": upload.type || "application/octet-stream",
           "X-Job": encodeURIComponent(job),
           "X-File-Category": encodeURIComponent(type),
           "X-File-Name": encodeURIComponent(file.name),
           "X-File-Tag": encodeURIComponent(tag)
         },
-        body: file
+        body: upload
       });
     }
     form.reset();
