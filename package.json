@@ -15,8 +15,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "dependencies": {
-    "heic2any": "0.0.4"
   }
 }
