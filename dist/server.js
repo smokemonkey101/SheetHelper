@@ -59,7 +59,11 @@ const unlockSecret = clean(process.env.SITE_UNLOCK_SECRET) || crypto.randomBytes
 const unlockCookie = "sheet_helper_unlock";
 const oauthStateCookie = "sheet_helper_drive_oauth";
 const maxJsonBytes = 2 * 1024 * 1024;
-const maxFileBytes = 20 * 1024 * 1024;
+const configuredMaxUploadMb = Number(process.env.MAX_UPLOAD_MB || 50);
+const maxFileBytes = (Number.isFinite(configuredMaxUploadMb) && configuredMaxUploadMb > 0
+    ? configuredMaxUploadMb
+    : 50) * 1024 * 1024;
+const multipartUploadMaxBytes = 5 * 1024 * 1024;
 exports.sheetDefinitions = {
     Jobs: ["Job"],
     Photos: ["Job", "Person", "Date", "Photo"],
@@ -491,26 +495,57 @@ async function uploadDriveFile(settings, file, fileName, mimeType = "application
     if (!settings.driveFolderId)
         throw new Error("Google Drive folder ID is not configured.");
     const token = await driveAccessToken(settings);
-    const boundary = `sheethelper_${crypto.randomBytes(12).toString("hex")}`;
-    const metadata = Buffer.from(JSON.stringify({
+    const metadataObject = {
         name: fileName,
         parents: [settings.driveFolderId]
-    }), "utf8");
-    const body = Buffer.concat([
-        Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`),
-        metadata,
-        Buffer.from(`\r\n--${boundary}\r\nContent-Type: ${mimeType.replace(/[\r\n]/g, "")}\r\n\r\n`),
-        file,
-        Buffer.from(`\r\n--${boundary}--`)
-    ]);
-    const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink", {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": `multipart/related; boundary=${boundary}`
-        },
-        body
-    });
+    };
+    const safeMimeType = mimeType.replace(/[\r\n]/g, "");
+    const uploadUrl = "https://www.googleapis.com/upload/drive/v3/files";
+    let response;
+    if (file.length > multipartUploadMaxBytes) {
+        const sessionResponse = await fetch(`${uploadUrl}?uploadType=resumable&supportsAllDrives=true&fields=id,name,webViewLink`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Length": String(file.length),
+                "X-Upload-Content-Type": safeMimeType
+            },
+            body: JSON.stringify(metadataObject)
+        });
+        const sessionUrl = sessionResponse.headers.get("location");
+        if (!sessionResponse.ok || !sessionUrl) {
+            const sessionResult = await sessionResponse.json().catch(() => ({}));
+            throw new Error(sessionResult.error?.message || "Drive could not start the large file upload.");
+        }
+        response = await fetch(sessionUrl, {
+            method: "PUT",
+            headers: {
+                "Content-Length": String(file.length),
+                "Content-Type": safeMimeType
+            },
+            body: file
+        });
+    }
+    else {
+        const boundary = `sheethelper_${crypto.randomBytes(12).toString("hex")}`;
+        const metadata = Buffer.from(JSON.stringify(metadataObject), "utf8");
+        const body = Buffer.concat([
+            Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`),
+            metadata,
+            Buffer.from(`\r\n--${boundary}\r\nContent-Type: ${safeMimeType}\r\n\r\n`),
+            file,
+            Buffer.from(`\r\n--${boundary}--`)
+        ]);
+        response = await fetch(`${uploadUrl}?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": `multipart/related; boundary=${boundary}`
+            },
+            body
+        });
+    }
     const result = await response.json();
     if (!response.ok || !result.id) {
         const message = result.error?.message || "Drive upload failed.";
@@ -700,16 +735,23 @@ async function readBody(req, max) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let size = 0;
+        let tooLarge = false;
         req.on("data", (chunk) => {
             size += chunk.length;
             if (size > max) {
-                reject(new Error("Upload is too large."));
-                req.destroy();
+                tooLarge = true;
+                chunks.length = 0;
             }
-            else
+            else if (!tooLarge)
                 chunks.push(chunk);
         });
-        req.on("end", () => resolve(Buffer.concat(chunks)));
+        req.on("end", () => {
+            if (tooLarge) {
+                reject(new Error(`Upload is too large. Maximum file size is ${Math.round(max / 1024 / 1024)} MB.`));
+            }
+            else
+                resolve(Buffer.concat(chunks));
+        });
         req.on("error", reject);
     });
 }
@@ -741,6 +783,7 @@ async function api(req, res, route) {
             pinConfigured: mainIsProtected(settings),
             person: identity?.name || "",
             role: identity?.role || "",
+            maxUploadBytes: maxFileBytes,
             ready: Boolean(email &&
                 key &&
                 settings.spreadsheetId &&

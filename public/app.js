@@ -2,6 +2,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const toast = $("#toast");
 let toastTimer;
+let maxUploadBytes = 50 * 1024 * 1024;
 
 function showToast(message, isError = false) {
   clearTimeout(toastTimer);
@@ -11,7 +12,12 @@ function showToast(message, isError = false) {
 }
 
 async function request(url, options = {}) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw new Error("The connection was interrupted before the server responded. Check your internet connection and try again.");
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (payload.locked) $("#lockScreen").hidden = false;
@@ -29,11 +35,24 @@ function setBusy(form, busy, label) {
 
 async function loadStatus() {
   const status = await request("/api/status");
+  if (Number(status.maxUploadBytes) > 0) maxUploadBytes = Number(status.maxUploadBytes);
+  if (!$("#masterFiles").files.length) $("#masterFileLabel").textContent = uploadLimitLabel();
   $("#lockScreen").hidden = !status.locked;
   $("#connectionStatus").className = `status${status.ready ? " ready" : ""}`;
   $("#connectionStatus").innerHTML = `<i></i> ${status.ready ? "Google connected" : "Setup needed"}`;
   $("#masterFileCard").hidden = status.role !== "master";
   return status;
+}
+
+function uploadLimitLabel() {
+  return `Any file type, up to ${Math.round(maxUploadBytes / 1024 / 1024)} MB each`;
+}
+
+function requireAllowedFileSize(file) {
+  if (file.size <= maxUploadBytes) return;
+  const fileMb = (file.size / 1024 / 1024).toFixed(1);
+  const maximumMb = Math.round(maxUploadBytes / 1024 / 1024);
+  throw new Error(`File is ${fileMb} MB. Maximum file size is ${maximumMb} MB.`);
 }
 
 async function loadJobs() {
@@ -93,7 +112,7 @@ $("#receiptFile").addEventListener("change", (event) => {
 
 $("#masterFiles").addEventListener("change", (event) => {
   const files = [...event.target.files];
-  $("#masterFileLabel").textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Any file type, up to 20 MB each";
+  $("#masterFileLabel").textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : uploadLimitLabel();
 });
 
 $("#taskJob").addEventListener("change", loadTasks);
@@ -110,6 +129,7 @@ $("#photoForm").addEventListener("submit", async (event) => {
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     try {
+      requireAllowedFileSize(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/photos", {
         method: "POST",
@@ -151,6 +171,7 @@ $("#receiptForm").addEventListener("submit", async (event) => {
   if (!file) return showToast("Choose one receipt photo.", true);
   setBusy(form, true, "Reading receipt…");
   try {
+    requireAllowedFileSize(file);
     const result = await request("/api/receipts", {
       method: "POST",
       headers: {
@@ -185,6 +206,7 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
   try {
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
+      requireAllowedFileSize(file);
       $("button[type=submit]", form).textContent = `Uploading ${index + 1} of ${files.length}…`;
       await request("/api/files", {
         method: "POST",
@@ -199,7 +221,7 @@ $("#masterFileForm").addEventListener("submit", async (event) => {
       });
     }
     form.reset();
-    $("#masterFileLabel").textContent = "Any file type, up to 20 MB each";
+    $("#masterFileLabel").textContent = uploadLimitLabel();
     showToast(`${files.length} file${files.length === 1 ? "" : "s"} added to ${type}.`);
   } catch (error) {
     showToast(error.message, true);
